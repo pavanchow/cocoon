@@ -475,11 +475,13 @@ fn apply_bind_mount(m: &Mount) -> Result<()> {
         }
         let _ = std::fs::File::create(&dst);
     }
+    // Non-recursive on purpose: only the named directory is exposed, never any
+    // host submount that happens to live underneath it.
     mount(
         Some(&src),
         &dst,
         None::<&str>,
-        MsFlags::MS_BIND | MsFlags::MS_REC,
+        MsFlags::MS_BIND,
         None::<&str>,
     )
     .map_err(rt("bind mount"))?;
@@ -603,6 +605,20 @@ fn apply_seccomp() {
         libc::SYS_perf_event_open,
         libc::SYS_mount,
         libc::SYS_umount2,
+        // The modern mount API reaches the same power as mount/umount2, so deny it
+        // too. Executed code already runs with zero capabilities (verified: CapEff
+        // is 0), which makes these EPERM at the kernel; this closes the syscall
+        // surface as well, so a read-only mount cannot be re-opened even if a
+        // capability were ever reintroduced.
+        libc::SYS_mount_setattr,
+        libc::SYS_open_tree,
+        libc::SYS_move_mount,
+        libc::SYS_fsopen,
+        libc::SYS_fsconfig,
+        libc::SYS_fsmount,
+        libc::SYS_fspick,
+        libc::SYS_pivot_root,
+        libc::SYS_chroot,
         libc::SYS_swapon,
         libc::SYS_swapoff,
         libc::SYS_reboot,
