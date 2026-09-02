@@ -24,12 +24,12 @@
 <style>
   :root{
     --accent:#0d9488;--accent2:#14b8a6;--accent-soft:#e6f7f4;
-    --ink:#15161c;--muted:#4b4e57;--faint:#6a6d78;
+    --ink:#15161c;--muted:#15161c;--faint:#15161c;
     --line:#ececed;--panel:#f7f7f9;--panel2:#fbfbfd;--ok:#1a7f37;--err:#b3261e;--warn:#b26a00;
     --mono:ui-monospace,SFMono-Regular,Menlo,"SF Mono",monospace;
   }
   @media(prefers-color-scheme:dark){
-    :root{--accent:#5eead4;--accent2:#2dd4bf;--accent-soft:#0c2b28;--ink:#f2f2f6;--muted:#c2c2cc;--faint:#9a9dae;
+    :root{--accent:#5eead4;--accent2:#2dd4bf;--accent-soft:#0c2b28;--ink:#f2f2f6;--muted:#f2f2f6;--faint:#f2f2f6;
       --line:#26262a;--panel:#151517;--panel2:#0f0f11;--ok:#4ac26b;--err:#ff6b60;--warn:#e2a53a;}
     body{background:#000}
   }
@@ -88,7 +88,7 @@
   .panel h4{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:10px;font-weight:500}
   .kv{font-family:var(--mono);font-size:13px;line-height:1.85}
   .kv .k{color:var(--faint)} .kv .v{color:var(--ink)} .kv .hot{color:var(--accent)}
-  .fsrow{font-family:var(--mono);font-size:12.5px;color:var(--ink);opacity:.62;transition:opacity .3s}
+  .fsrow{font-family:var(--mono);font-size:12.5px;color:var(--ink);opacity:.85;transition:opacity .3s}
   .fsrow.on{opacity:1}
   .capbar{display:flex;flex-wrap:wrap;gap:3px;margin-top:2px}
   .capseg{width:9px;height:9px;border-radius:2px;background:var(--accent)}
@@ -99,7 +99,7 @@
   .shield .hd{color:var(--ok);font-weight:600}
   .plan-tbl{font-family:var(--mono);font-size:12.5px;color:var(--ink);margin-top:18px;line-height:1.95;border-top:1px solid var(--line);padding-top:14px}
   .plan-tbl b{color:var(--muted);font-weight:500;display:inline-block;min-width:96px}
-  .outcome{margin-top:18px;border-top:1px solid var(--line);padding-top:14px;opacity:.55;transition:opacity .5s}
+  .outcome{margin-top:18px;border-top:1px solid var(--line);padding-top:14px;opacity:.85;transition:opacity .5s}
   .outcome.on{opacity:1}
   .outcome .oh{font-family:var(--mono);font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:9px}
   .outcome .call{font-family:var(--mono);font-size:12.5px;color:var(--accent);margin-bottom:9px;word-break:break-all}
