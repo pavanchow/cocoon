@@ -76,6 +76,22 @@ fn split_args_honors_quotes() {
     assert!(split_args("oops \"unterminated").is_err());
 }
 
+#[test]
+fn hash_is_a_comment_only_outside_quotes_and_after_space() {
+    // '#' inside a quoted argv is kept, not treated as a comment
+    let c = Config::parse("argv = /bin/sh -c \"echo #1 done\"").unwrap();
+    assert_eq!(c.argv, vec!["/bin/sh", "-c", "echo #1 done"]);
+    // '#' with no preceding space in a value is part of the value
+    let c2 = Config::parse("argv=/bin/sh\nenv = MSG=a#b").unwrap();
+    assert_eq!(c2.env, vec![("MSG".to_string(), "a#b".to_string())]);
+    // a spaced '#' is still an inline comment
+    let c3 = Config::parse("hostname = box   # a note\nargv = /bin/sh").unwrap();
+    assert_eq!(c3.hostname, "box");
+    // a full-line comment
+    let c4 = Config::parse("# just a comment\nargv = /bin/sh").unwrap();
+    assert_eq!(c4.argv, vec!["/bin/sh"]);
+}
+
 // ---- plan ----
 
 #[test]

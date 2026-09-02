@@ -1,0 +1,27 @@
+=== hash-in-quoted-argv
+input: "argv = /bin/echo \"a#b\""
+ERR config error: line 1: unterminated quote in argv
+=== hash-in-env-value
+input: "argv = /bin/sh\nenv = MSG=hello#world"
+OK  argv=["/bin/sh"] env=[("MSG", "hello")] mem=None pids=None
+=== mem-overflow
+input: "argv=/bin/sh\nmemory_max = 99999999999999999999999999"
+ERR config error: line 2: memory_max must be a non-negative integer
+=== mem-plus-prefix
+input: "argv=/bin/sh\nmemory_max = +5"
+OK  argv=["/bin/sh"] env=[] mem=Some(5) pids=None
+=== empty-quoted-argv
+input: "argv = \"\""
+OK  argv=[""] env=[] mem=None pids=None
+=== env-eq-in-value
+input: "argv=/bin/sh\nenv = TOKEN=a=b=c"
+OK  argv=["/bin/sh"] env=[("TOKEN", "a=b=c")] mem=None pids=None
+=== dup-hostname
+input: "argv=/bin/sh\nhostname = a\nhostname = b"
+OK  argv=["/bin/sh"] env=[] mem=None pids=None
+=== nul-in-argv
+input: "argv = /bin/sh\0evil"
+OK  argv=["/bin/sh\0evil"] env=[] mem=None pids=None
+empty-quoted-argv PLAN argv=[""] (argv[0]=Some(""))
+split_args("\"\"") = Ok([""])
+split_args(a#b as seen after strip) not applicable (strip happens before)

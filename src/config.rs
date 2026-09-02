@@ -93,11 +93,21 @@ impl Config {
     }
 }
 
+// A `#` starts a comment only when it is outside double quotes and at the start
+// of the line or preceded by whitespace. So `#` inside a quoted argv is kept, an
+// unspaced `a#b` in a value is kept, and `key = val  # note` still strips.
 fn strip_comment(line: &str) -> &str {
-    match line.find('#') {
-        Some(i) => &line[..i],
-        None => line,
+    let mut in_quote = false;
+    let mut prev = ' ';
+    for (i, c) in line.char_indices() {
+        match c {
+            '"' => in_quote = !in_quote,
+            '#' if !in_quote && (i == 0 || prev.is_whitespace()) => return &line[..i],
+            _ => {}
+        }
+        prev = c;
     }
+    line
 }
 
 fn parse_u64(v: &str, line: usize, key: &str) -> Result<u64> {

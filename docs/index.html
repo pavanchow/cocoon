@@ -181,12 +181,13 @@ function splitArgs(s){
   if(has)out.push(cur);
   return out;
 }
+function stripComment(line){let inq=false,prev=" ";for(let i=0;i<line.length;i++){const c=line[i];if(c==='"')inq=!inq;else if(c==='#'&&!inq&&(i===0||/\s/.test(prev)))return line.slice(0,i);prev=c;}return line;}
 function parseConfig(text){
   const c={hostname:"cocoon",cwd:"/",argv:[],env:[],isolate_net:false,memory_max:null,pids_max:null};
   let sawArgv=false;
   const lines=text.split("\n");
   for(let i=0;i<lines.length;i++){
-    let line=lines[i];const h=line.indexOf("#");if(h>=0)line=line.slice(0,h);line=line.trim();
+    let line=stripComment(lines[i]).trim();
     if(!line)continue;
     const eq=line.indexOf("=");if(eq<0)throw new Error(`line ${i+1}: expected 'key = value'`);
     const key=line.slice(0,eq).trim(),value=line.slice(eq+1).trim();

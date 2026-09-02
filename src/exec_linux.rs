@@ -132,8 +132,10 @@ fn child_setup(plan: &Plan, rootfs: &Path) -> Result<Never> {
     let argv: Vec<CString> = plan
         .argv
         .iter()
-        .map(|a| CString::new(a.as_str()).unwrap())
-        .collect();
+        .map(|a| {
+            CString::new(a.as_str()).map_err(|_| Error::Runtime("argv contains a NUL byte".into()))
+        })
+        .collect::<Result<_>>()?;
     let mut env = plan.env.clone();
     if !env.iter().any(|(k, _)| k == "PATH") {
         env.push((
@@ -143,8 +145,11 @@ fn child_setup(plan: &Plan, rootfs: &Path) -> Result<Never> {
     }
     let envp: Vec<CString> = env
         .iter()
-        .map(|(k, v)| CString::new(format!("{k}={v}")).unwrap())
-        .collect();
+        .map(|(k, v)| {
+            CString::new(format!("{k}={v}"))
+                .map_err(|_| Error::Runtime("env contains a NUL byte".into()))
+        })
+        .collect::<Result<_>>()?;
 
     execvpe(&argv[0], &argv, &envp).map_err(rt("exec"))?;
     unreachable!("execvpe returns only on error")
