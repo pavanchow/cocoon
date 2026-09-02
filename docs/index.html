@@ -4,33 +4,33 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cocoon: a rootless Linux container runtime from scratch in Rust</title>
-<meta name="description" content="Cocoon by Pavan Nallamothu: a small rootless Linux container runtime built from scratch in Rust. It isolates a process with user, mount, pid, uts, and ipc namespaces and pivot_roots into a bundle rootfs, no root required. Readable end to end. Edit a config and watch the isolation plan live.">
+<meta name="description" content="Cocoon by Pavan Nallamothu: a small rootless Linux container runtime built from scratch in Rust. It isolates a process with user, mount, pid, uts, and ipc namespaces, pivot_roots into a bundle rootfs, drops capabilities and applies seccomp, no root required. Edit a config and watch the container be born, live.">
 <meta name="author" content="Pavan Nallamothu (pavanchow)">
 <link rel="canonical" href="https://pavanchow.github.io/cocoon/">
 <link rel="author" href="https://github.com/pavanchow">
 <meta property="og:type" content="website">
 <meta property="og:title" content="Cocoon: a rootless Linux container runtime from scratch in Rust">
-<meta property="og:description" content="A small rootless Linux container runtime: user, mount, pid, uts, ipc namespaces and pivot_root, no root. Readable end to end. By Pavan Nallamothu.">
+<meta property="og:description" content="A small rootless Linux container runtime: namespaces, pivot_root, dropped capabilities, seccomp, no root. Edit a config and watch the container be born. By Pavan Nallamothu.">
 <meta property="og:url" content="https://pavanchow.github.io/cocoon/">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="Cocoon: a rootless Linux container runtime from scratch in Rust">
-<meta name="twitter:description" content="A rootless container runtime you can read end to end. Namespaces and pivot_root, no root.">
+<meta name="twitter:description" content="A rootless container runtime you can read end to end. Watch a container be born, live.">
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Cocoon","applicationCategory":"DeveloperApplication","operatingSystem":"Linux","description":"Cocoon is a small rootless Linux container runtime built from scratch in Rust: it isolates a process with user, mount, pid, uts, and ipc namespaces and pivot_roots into a bundle rootfs, without root.","url":"https://pavanchow.github.io/cocoon/","author":{"@type":"Person","name":"Pavan Nallamothu"},"programmingLanguage":"Rust","codeRepository":"https://github.com/pavanchow/cocoon","license":"https://opensource.org/licenses/MIT"}
+{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Cocoon","applicationCategory":"DeveloperApplication","operatingSystem":"Linux","description":"Cocoon is a small rootless Linux container runtime built from scratch in Rust: it isolates a process with user, mount, pid, uts, and ipc namespaces, pivot_roots into a bundle rootfs, drops capabilities and applies a seccomp filter, without root.","url":"https://pavanchow.github.io/cocoon/","author":{"@type":"Person","name":"Pavan Nallamothu"},"programmingLanguage":"Rust","codeRepository":"https://github.com/pavanchow/cocoon","license":"https://opensource.org/licenses/MIT"}
 </script>
 <script type="application/ld+json">
 {"@context":"https://schema.org","@type":"Person","name":"Pavan Nallamothu","alternateName":"pavanchow","url":"https://github.com/pavanchow","sameAs":["https://github.com/pavanchow","https://hackerone.com/pavanchow"]}
 </script>
 <style>
   :root{
-    --accent:#0d9488;--accent-soft:#e6f7f4;
+    --accent:#0d9488;--accent2:#14b8a6;--accent-soft:#e6f7f4;
     --ink:#15161c;--muted:#6a6d78;--faint:#9a9dab;
-    --line:#ececed;--panel:#f7f7f9;--panel2:#fbfbfd;--ok:#1a7f37;--err:#b3261e;
+    --line:#ececed;--panel:#f7f7f9;--panel2:#fbfbfd;--ok:#1a7f37;--err:#b3261e;--warn:#b26a00;
     --mono:ui-monospace,SFMono-Regular,Menlo,"SF Mono",monospace;
   }
   @media(prefers-color-scheme:dark){
-    :root{--accent:#5eead4;--accent-soft:#0c2b28;--ink:#f2f2f6;--muted:#a1a1ab;--faint:#70727e;
-      --line:#26262a;--panel:#151517;--panel2:#0f0f11;--ok:#4ac26b;--err:#ff6b60;}
+    :root{--accent:#5eead4;--accent2:#2dd4bf;--accent-soft:#0c2b28;--ink:#f2f2f6;--muted:#a1a1ab;--faint:#70727e;
+      --line:#26262a;--panel:#151517;--panel2:#0f0f11;--ok:#4ac26b;--err:#ff6b60;--warn:#e2a53a;}
     body{background:#000}
   }
   *{box-sizing:border-box;margin:0;padding:0}
@@ -47,7 +47,7 @@
   nav .links{display:flex;gap:26px;align-items:center}
   nav .links a{color:var(--ink);font-size:14.5px}
   @media(max-width:640px){nav .links a:not(.gh){display:none}}
-  .hero{padding:80px 0 34px;text-align:center}
+  .hero{padding:80px 0 30px;text-align:center}
   .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent)}
   h1{font-size:clamp(40px,7vw,66px);line-height:1.05;letter-spacing:-.035em;font-weight:680;margin:18px 0 0;text-wrap:balance}
   .hero p.sub{max-width:660px;margin:24px auto 0;font-size:clamp(17px,2.1vw,21px);color:var(--muted)}
@@ -56,90 +56,100 @@
   .btn:hover{opacity:.75;text-decoration:none}
   .btn.primary{background:var(--ink);color:var(--panel2);border-color:var(--ink)}
   @media(prefers-color-scheme:dark){.btn.primary{color:#000}}
-  .stage{max-width:960px;margin:40px auto 0;padding:0 28px}
-  .card{background:var(--panel2);border:1px solid var(--line);border-radius:22px;padding:26px;box-shadow:0 18px 50px -30px rgba(13,148,136,.35)}
+  .stage{max-width:1000px;margin:36px auto 0;padding:0 20px}
+  .card{background:var(--panel2);border:1px solid var(--line);border-radius:22px;padding:24px;box-shadow:0 24px 60px -34px rgba(13,148,136,.4)}
   section{padding:84px 0;border-top:1px solid var(--line)}
   h2{font-size:clamp(26px,4.2vw,38px);line-height:1.12;letter-spacing:-.025em;font-weight:660;text-align:center;max-width:760px;margin:0 auto}
   .lead{max-width:640px;margin:18px auto 0;text-align:center;color:var(--muted)}
-  .grid{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-top:8px}
-  @media(max-width:820px){.grid{grid-template-columns:1fr}}
   h3.lbl{font-size:12px;margin:0 0 10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-family:var(--mono)}
-  #conf{width:100%;min-height:210px;font-family:var(--mono);font-size:13.5px;border:1px solid var(--line);border-radius:12px;padding:15px;resize:vertical;line-height:1.6;background:#fff;color:var(--ink)}
+  .simtop{display:grid;grid-template-columns:340px 1fr;gap:20px}
+  @media(max-width:820px){.simtop{grid-template-columns:1fr}}
+  #conf{width:100%;min-height:196px;font-family:var(--mono);font-size:13px;border:1px solid var(--line);border-radius:12px;padding:14px;resize:vertical;line-height:1.6;background:#fff;color:var(--ink)}
   @media(prefers-color-scheme:dark){#conf{background:#0b0b0d}}
-  .status{margin:12px 0 0;font-family:var(--mono);font-size:13px;padding:9px 13px;border-radius:10px;border:1px solid var(--line)}
+  .status{margin:10px 0 0;font-family:var(--mono);font-size:12.5px;padding:8px 12px;border-radius:10px;border:1px solid var(--line)}
   .status.good{color:var(--ok)} .status.bad{color:var(--err);border-color:color-mix(in srgb,var(--err) 40%,var(--line))}
-  .diagram{border:1px solid var(--line);border-radius:14px;padding:20px;background:var(--panel);min-height:210px}
-  .ns{border:1.5px solid var(--accent);border-radius:12px;padding:14px 14px 12px;position:relative;margin:0}
-  .ns+.ns,.ns>.ns{margin-top:0}
-  .ns>.nslabel{position:absolute;top:-9px;left:12px;background:var(--panel);padding:0 7px;font-family:var(--mono);font-size:11px;color:var(--accent);letter-spacing:.04em}
-  .ns-inner{padding:12px}
-  .proc{background:var(--accent-soft);border:1px solid var(--accent);border-radius:10px;padding:12px 14px;text-align:center}
-  .proc .cmd{font-family:var(--mono);font-size:13px;color:var(--ink)}
-  .proc .id{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:6px}
-  .host{font-family:var(--mono);font-size:12px;color:var(--faint);margin-bottom:10px}
-  .plan-tbl{font-family:var(--mono);font-size:13px;color:var(--ink);margin-top:14px;line-height:1.9}
-  .plan-tbl b{color:var(--muted);font-weight:500;display:inline-block;min-width:96px}
-  .chips{display:flex;flex-wrap:wrap;gap:7px;margin:14px 0}
+  .chips{display:flex;flex-wrap:wrap;gap:7px;margin:0 0 16px}
   .chip{font-size:12.5px;padding:5px 12px;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--ink);cursor:pointer;font-family:inherit}
   .chip:hover{border-color:var(--accent);color:var(--accent)}
-  .steps{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin:32px 0 8px}
-  .step{font-family:var(--mono);font-size:12.5px;padding:7px 12px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
-  .step.active{background:var(--accent);color:#fff;border-color:var(--accent)}
-  .stepctl{display:flex;gap:12px;justify-content:center;margin-top:8px}
-  .stepctl button{background:var(--ink);color:var(--panel2);border:none;border-radius:999px;padding:9px 20px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit}
-  @media(prefers-color-scheme:dark){.stepctl button{color:#000}}
-  .stepnote{max-width:600px;margin:18px auto 0;text-align:center;color:var(--muted);font-size:15px;min-height:44px}
+  .canvaswrap{position:relative;border:1px solid var(--line);border-radius:16px;overflow:hidden;background:
+    radial-gradient(120% 120% at 50% 0%, color-mix(in srgb,var(--accent) 7%,transparent), transparent 60%), var(--panel)}
+  #stage{display:block;width:100%;height:420px}
+  .phaseTag{position:absolute;top:12px;left:14px;font-family:var(--mono);font-size:12px;color:var(--accent);letter-spacing:.03em;
+    background:color-mix(in srgb,var(--panel2) 80%,transparent);border:1px solid var(--line);border-radius:999px;padding:5px 12px}
+  .controls{display:flex;align-items:center;gap:14px;margin:16px 0 4px;flex-wrap:wrap}
+  #launch{background:var(--ink);color:var(--panel2);border:none;border-radius:999px;padding:11px 24px;font-size:14.5px;font-weight:650;cursor:pointer;font-family:inherit}
+  @media(prefers-color-scheme:dark){#launch{color:#000}}
+  #launch:hover{opacity:.88}
+  #scrub{flex:1;min-width:160px;accent-color:var(--accent);height:4px}
+  #clock{font-family:var(--mono);font-size:12.5px;color:var(--muted);min-width:64px;text-align:right}
+  .panels{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:18px}
+  @media(max-width:820px){.panels{grid-template-columns:1fr 1fr}}
+  .panel{border:1px solid var(--line);border-radius:14px;padding:14px;background:var(--panel);min-height:132px}
+  .panel h4{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:10px;font-weight:500}
+  .kv{font-family:var(--mono);font-size:13px;line-height:1.85}
+  .kv .k{color:var(--faint)} .kv .v{color:var(--ink)} .kv .hot{color:var(--accent)}
+  .fsrow{font-family:var(--mono);font-size:12.5px;color:var(--ink);opacity:.35;transition:opacity .3s}
+  .fsrow.on{opacity:1}
+  .capbar{display:flex;flex-wrap:wrap;gap:3px;margin-top:2px}
+  .capseg{width:9px;height:9px;border-radius:2px;background:var(--accent)}
+  .capseg.off{background:color-mix(in srgb,var(--err) 55%,var(--line))}
+  .lockline{font-family:var(--mono);font-size:12.5px;color:var(--muted);margin-top:10px}
+  .lockline.set{color:var(--ok)}
+  .shield{font-family:var(--mono);font-size:12px;color:var(--muted);line-height:1.7}
+  .shield .hd{color:var(--ok);font-weight:600}
+  .plan-tbl{font-family:var(--mono);font-size:12.5px;color:var(--ink);margin-top:18px;line-height:1.95;border-top:1px solid var(--line);padding-top:14px}
+  .plan-tbl b{color:var(--muted);font-weight:500;display:inline-block;min-width:96px}
   pre{background:#15161c;color:#ececf4;border-radius:14px;padding:20px 22px;font-family:var(--mono);font-size:13px;line-height:1.6;overflow-x:auto;max-width:760px;margin:30px auto 0}
   pre .cm{color:#8a8d9a} pre .g{color:#7fd6a0}
   footer{padding:60px 0;border-top:1px solid var(--line);text-align:center;color:var(--muted)}
   footer .name{color:var(--ink);font-weight:600}footer p+p{margin-top:10px}
-  @media(max-width:640px){.hero{padding:56px 0 26px}section{padding:60px 0}.card{padding:18px}}
+  @media(max-width:640px){.hero{padding:56px 0 24px}section{padding:60px 0}.card{padding:16px}#stage{height:340px}}
 </style>
 </head>
 <body>
-<noscript><div class="wrap" style="padding:40px 28px;color:#6a6d78">Cocoon is a small rootless Linux container runtime built from scratch in Rust by Pavan Nallamothu. It isolates a process with user, mount, pid, uts, and ipc namespaces and pivot_roots into a bundle rootfs, no root required. Source: <a href="https://github.com/pavanchow/cocoon">github.com/pavanchow/cocoon</a>.</div></noscript>
+<noscript><div class="wrap" style="padding:40px 28px;color:#6a6d78">Cocoon is a small rootless Linux container runtime built from scratch in Rust by Pavan Nallamothu. It isolates a process with user, mount, pid, uts, and ipc namespaces, pivot_roots into a bundle rootfs, drops capabilities and applies a seccomp filter, no root required. Source: <a href="https://github.com/pavanchow/cocoon">github.com/pavanchow/cocoon</a>.</div></noscript>
 
 <nav><div class="row">
   <div class="brand"><span class="gem"></span>Cocoon</div>
-  <div class="links"><a href="#sim">Simulator</a><a href="#seq">Sequence</a><a href="#proof">Proof</a><a class="gh" href="https://github.com/pavanchow/cocoon">GitHub</a></div>
+  <div class="links"><a href="#sim">Simulator</a><a href="#proof">Proof</a><a href="#use">Use it</a><a class="gh" href="https://github.com/pavanchow/cocoon">GitHub</a></div>
 </div></nav>
 
 <div class="hero">
   <p class="eyebrow">Rust · rootless container runtime</p>
-  <h1>A container,<br>unwrapped.</h1>
-  <p class="sub">Cocoon is a small rootless Linux container runtime built from scratch in Rust. The whole isolation sequence, namespaces and pivot_root, is one plain file you can read in a sitting, and it needs no root. Edit a bundle config below and watch the isolation plan take shape.</p>
+  <h1>Watch a container<br>be born.</h1>
+  <p class="sub">Cocoon is a small rootless Linux container runtime built from scratch in Rust. Edit a bundle config and press Launch: the simulation runs the real isolation sequence, namespaces, pivot_root, dropped capabilities, seccomp, live in your browser. It needs no root, and the whole runtime is one file you can read.</p>
   <div class="cta-row">
-    <a class="btn primary" href="https://github.com/pavanchow/cocoon">View on GitHub</a>
-    <a class="btn" href="#sim">Try the simulator</a>
+    <a class="btn primary" href="#sim">Launch the simulation</a>
+    <a class="btn" href="https://github.com/pavanchow/cocoon">View on GitHub</a>
   </div>
 </div>
 
 <div class="stage" id="sim"><div class="card">
-  <h2 style="text-align:left;max-width:none;margin-bottom:6px">Bundle simulator</h2>
-  <p style="color:var(--muted);font-size:15px;margin-bottom:18px">This runs a faithful JavaScript port of Cocoon's real config parser and planner. Edit the <code>cocoon.conf</code> and the isolation plan and the namespace diagram update live. Actually running a container needs Linux, but the decision is exactly what the Rust crate computes.</p>
   <div class="chips" id="chips"></div>
-  <div class="grid">
+  <div class="simtop">
     <div>
       <h3 class="lbl">cocoon.conf</h3>
       <textarea id="conf" spellcheck="false"></textarea>
       <div class="status" id="status">&nbsp;</div>
     </div>
     <div>
-      <h3 class="lbl">isolation</h3>
-      <div class="diagram" id="diagram"></div>
-      <div class="plan-tbl" id="plantbl"></div>
+      <h3 class="lbl">live isolation</h3>
+      <div class="canvaswrap"><canvas id="stage"></canvas><div class="phaseTag" id="phaseTag">host</div></div>
+      <div class="controls">
+        <button id="launch">Launch container ▸</button>
+        <input type="range" id="scrub" min="0" max="1000" value="0" aria-label="timeline">
+        <span id="clock">0.0s</span>
+      </div>
     </div>
   </div>
+  <div class="panels">
+    <div class="panel"><h4>identity</h4><div class="kv" id="p-id"></div></div>
+    <div class="panel"><h4>filesystem</h4><div id="p-fs"></div></div>
+    <div class="panel"><h4>capabilities</h4><div id="p-caps"></div></div>
+    <div class="panel"><h4>seccomp</h4><div class="shield" id="p-sec"></div></div>
+  </div>
+  <div class="plan-tbl" id="plantbl"></div>
 </div></div>
-
-<section id="seq"><div class="wrap">
-  <h2>The isolation sequence</h2>
-  <p class="lead">Six steps turn your process into a container. Step through them and watch what the process sees change from the host to the container.</p>
-  <div class="steps" id="steps"></div>
-  <div class="stepctl"><button id="prev">Prev</button><button id="play">Play</button><button id="next">Next</button></div>
-  <div class="stepnote" id="stepnote"></div>
-  <div class="diagram" id="seqdiagram" style="max-width:520px;margin:26px auto 0"></div>
-</div></section>
 
 <section id="proof"><div class="wrap">
   <h2>It really isolates, rootless</h2>
@@ -147,8 +157,12 @@
   <pre><span class="cm"># host is 'kali' at uid 1000. inside the container:</span>
 container said: host=cocoonbox pid=1 uid=0 procs=4
 <span class="g">isolation: only 4 process(es) visible in the pid namespace (host has hundreds)</span>
-<span class="g">PROOF OK: rootless isolation verified</span></pre>
-  <p class="lead" style="margin-top:26px">Different hostname (uts namespace), pid 1 (pid namespace), uid 0 mapped from your real uid with no privilege used (user namespace), and only its own processes visible. The whole runtime is one file, <code>src/exec_linux.rs</code>.</p>
+<span class="g">PROOF OK: rootless isolation verified</span>
+
+<span class="cm"># and the hardening, checked inside a running container:</span>
+NoNewPrivs: 1          <span class="cm"># cannot regain privilege</span>
+Seccomp:    2          <span class="cm"># a seccomp filter is loaded</span></pre>
+  <p class="lead" style="margin-top:26px">Different hostname, pid 1, uid 0 mapped from your real uid with no privilege used, its own filesystem and process view, capabilities dropped and a seccomp filter loaded. The whole runtime is one file, <code>src/exec_linux.rs</code>.</p>
 </div></section>
 
 <section id="use"><div class="wrap">
@@ -182,13 +196,12 @@ function splitArgs(s){
   return out;
 }
 function stripComment(line){let inq=false,prev=" ";for(let i=0;i<line.length;i++){const c=line[i];if(c==='"')inq=!inq;else if(c==='#'&&!inq&&(i===0||/\s/.test(prev)))return line.slice(0,i);prev=c;}return line;}
+function uint(v,line,key){if(!/^\d+$/.test(v)||BigInt(v)>18446744073709551615n)throw new Error(`line ${line}: ${key} must be a non-negative integer`);return Number(v);}
 function parseConfig(text){
   const c={hostname:"cocoon",cwd:"/",argv:[],env:[],isolate_net:false,readonly:false,memory_max:null,pids_max:null};
-  let sawArgv=false;
-  const lines=text.split("\n");
+  let sawArgv=false;const lines=text.split("\n");
   for(let i=0;i<lines.length;i++){
-    let line=stripComment(lines[i]).trim();
-    if(!line)continue;
+    let line=stripComment(lines[i]).trim();if(!line)continue;
     const eq=line.indexOf("=");if(eq<0)throw new Error(`line ${i+1}: expected 'key = value'`);
     const key=line.slice(0,eq).trim(),value=line.slice(eq+1).trim();
     switch(key){
@@ -206,7 +219,6 @@ function parseConfig(text){
   if(!sawArgv||c.argv.length===0)throw new Error("config must set a non-empty 'argv'");
   return c;
 }
-function uint(v,line,key){if(!/^\d+$/.test(v)||BigInt(v)>18446744073709551615n)throw new Error(`line ${line}: ${key} must be a non-negative integer`);return Number(v);}
 function planFromConfig(c){
   if(c.argv.length===0)throw new Error("argv is empty; nothing to run");
   if(!c.cwd.startsWith("/"))throw new Error(`cwd must be an absolute path, got '${c.cwd}'`);
@@ -214,71 +226,177 @@ function planFromConfig(c){
   return {namespaces:ns,hostname:c.hostname,cwd:c.cwd,argv:c.argv,env:c.env,readonly:c.readonly,limits:{memory_max:c.memory_max,pids_max:c.pids_max}};
 }
 
-/* ===== simulator UI ===== */
+/* ===== helpers ===== */
+const esc=s=>String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+const cssv=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
+const lerp=(a,b,t)=>a+(b-a)*t;
+const smooth=(x)=>x<=0?0:x>=1?1:x*x*(3-2*x);
+// progress of a phase [a,b] at time t
+const seg=(t,a,b)=>smooth(clamp((t-a)/(b-a),0,1));
+
+/* ===== timeline phases (t in 0..1) ===== */
+const PH=[
+  {n:"host",         a:0.00,b:0.08},
+  {n:"unshare",      a:0.08,b:0.30},
+  {n:"map uid → 0",  a:0.30,b:0.40},
+  {n:"fork → pid 1", a:0.40,b:0.50},
+  {n:"pivot_root",   a:0.50,b:0.66},
+  {n:"deprivilege",  a:0.66,b:0.82},
+  {n:"seccomp",      a:0.82,b:0.92},
+  {n:"exec",         a:0.92,b:1.00},
+];
+const DENY=["keyctl","ptrace","mount","bpf","reboot","init_module","kexec_load"];
+
+/* ===== canvas stage ===== */
+const cv=document.getElementById("stage"),ctx=cv.getContext("2d");
+let DPR=1,W=0,H=0,cloud=[];
+function seedCloud(){
+  cloud=[];let s=1337;const rnd=()=>{s=(s*1664525+1013904223)>>>0;return s/4294967296;};
+  for(let i=0;i<190;i++)cloud.push({x:rnd(),y:rnd(),r:0.8+rnd()*1.4,ph:rnd()*6.28});
+}
+function resize(){
+  DPR=Math.min(2,window.devicePixelRatio||1);
+  W=cv.clientWidth;H=cv.clientHeight;
+  cv.width=W*DPR;cv.height=H*DPR;ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+function draw(t,plan){
+  const A=cssv("--accent"),INK=cssv("--ink"),SOFT=cssv("--accent-soft"),
+        MUT=cssv("--muted"),FAINT=cssv("--faint"),ERR=cssv("--err");
+  ctx.clearRect(0,0,W,H);
+  const cx=W*0.5, cy=H*0.52;
+  const forked=seg(t,PH[3].a,PH[3].b);
+  const hostAlpha=lerp(1,0.10,forked);
+
+  // host process cloud
+  for(const p of cloud){
+    const px=20+p.x*(W-40), py=20+p.y*(H-40);
+    const d=Math.hypot(px-cx,py-cy);
+    if(forked>0.4 && d<Math.min(W,H)*0.34) continue; // cleared inside after fork
+    ctx.globalAlpha=hostAlpha*(0.5+0.5*Math.abs(Math.sin(t*6+p.ph)));
+    ctx.fillStyle=FAINT;ctx.beginPath();ctx.arc(px,py,p.r,0,6.2832);ctx.fill();
+  }
+  ctx.globalAlpha=1;
+
+  // namespace rings closing in
+  const ns=plan?plan.namespaces:[];
+  const base=Math.min(W,H)*0.11, gap=Math.min(W,H)*0.062;
+  for(let i=ns.length-1;i>=0;i--){
+    const slotA=lerp(PH[1].a,PH[1].b,i/Math.max(ns.length,1));
+    const slotB=slotA+(PH[1].b-PH[1].a)/ns.length+0.02;
+    const p=seg(t,slotA,slotB);
+    if(p<=0)continue;
+    const R=base+gap*(i+1);
+    ctx.globalAlpha=0.9*p;
+    ctx.strokeStyle=A;ctx.lineWidth=1.6;
+    ctx.beginPath();ctx.arc(cx,cy,R*lerp(1.14,1,p),0,6.2832);ctx.stroke();
+    // label
+    ctx.globalAlpha=p;ctx.fillStyle=A;ctx.font="11px "+cssv("--mono");
+    ctx.textAlign="center";ctx.fillText(ns[i]+" ns",cx,cy-R*lerp(1.14,1,p)-6);
+  }
+  ctx.globalAlpha=1;ctx.textAlign="center";
+
+  // container's own few processes after fork
+  if(forked>0.5 && plan){
+    const dots=Math.min(4,1+plan.argv.length);
+    for(let i=0;i<dots;i++){const ang=-1.2+i*0.9, rr=base*0.62;
+      ctx.globalAlpha=smooth((forked-0.5)/0.5)*0.85;ctx.fillStyle=A;
+      ctx.beginPath();ctx.arc(cx+Math.cos(ang)*rr,cy+Math.sin(ang)*rr*0.7,2.1,0,6.2832);ctx.fill();}
+    ctx.globalAlpha=1;
+  }
+
+  // the process node
+  const cmd=plan?plan.argv[0]:"(fix config)";
+  ctx.font="600 13px "+cssv("--mono");
+  const w=Math.max(120,ctx.measureText(cmd).width+34), h=44, x=cx-w/2, y=cy-h/2;
+  const execPulse=seg(t,PH[7].a,PH[7].b);
+  ctx.save();
+  ctx.shadowColor=A;ctx.shadowBlur=lerp(6,26,execPulse);
+  ctx.fillStyle=SOFT;ctx.strokeStyle=A;ctx.lineWidth=1.6;
+  roundRect(x,y,w,h,12);ctx.fill();ctx.stroke();
+  ctx.restore();
+  ctx.fillStyle=INK;ctx.font="600 13px "+cssv("--mono");ctx.textBaseline="middle";
+  ctx.fillText(cmd,cx,cy-5);
+  const pid = t<PH[3].b?"pid "+ (t<PH[3].a?"14872":"…"):"pid 1";
+  const uid = t<PH[1].b?"uid 1000": t<PH[2].b?"uid nobody":"uid 0";
+  ctx.fillStyle=MUT;ctx.font="11px "+cssv("--mono");
+  ctx.fillText(pid+" · "+uid, cx, cy+13);
+  ctx.textBaseline="alphabetic";
+}
+function roundRect(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
+
+/* ===== synced side panels ===== */
+const HOST_FS=["/ (host root)","/etc /home /usr","hundreds of files"];
+function panels(t,plan){
+  // identity
+  const host = t<PH[4].b?"kali":(plan?plan.hostname:"cocoon");
+  const uid = t<PH[1].b?"1000": t<PH[2].b?"nobody":"0";
+  const pid = t<PH[3].b?"14872":"1";
+  document.getElementById("p-id").innerHTML=
+    `<div><span class="k">hostname </span><span class="${t>=PH[4].b?'hot':'v'}">${esc(host)}</span></div>`+
+    `<div><span class="k">uid&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span><span class="${t>=PH[2].b?'hot':'v'}">${uid}</span></div>`+
+    `<div><span class="k">pid&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span><span class="${t>=PH[3].b?'hot':'v'}">${pid}</span></div>`;
+  // filesystem
+  const pv=seg(t,PH[4].a,PH[4].b);
+  const rows = pv<0.5
+    ? HOST_FS.map(r=>`<div class="fsrow on">${esc(r)}</div>`).join("")
+    : ["/ (bundle rootfs)","/bin /proc /dev"+(plan&&plan.readonly?"  ·  read-only":""),plan?("run "+esc(plan.cwd)):""]
+        .map(r=>`<div class="fsrow on">${r}</div>`).join("");
+  document.getElementById("p-fs").innerHTML=rows;
+  // capabilities: 40 segments, drain during deprivilege
+  const drop=seg(t,PH[5].a,PH[5].b), kept=Math.round(40*(1-drop));
+  let caps='<div class="capbar">';for(let i=0;i<40;i++)caps+=`<span class="capseg ${i<kept?'':'off'}"></span>`;caps+='</div>';
+  caps+=`<div class="lockline ${t>=PH[5].b?'set':''}">no_new_privs ${t>=PH[5].b?'set ✓':'…'}</div>`;
+  document.getElementById("p-caps").innerHTML=caps;
+  // seccomp
+  const sp=seg(t,PH[6].a,PH[6].b);
+  if(sp<0.15){document.getElementById("p-sec").innerHTML='<span style="color:var(--muted)">filter not loaded</span>';}
+  else{const shown=DENY.slice(0,Math.max(1,Math.round(DENY.length*sp)));
+    document.getElementById("p-sec").innerHTML=`<div class="hd">Seccomp: 2 — loaded</div>`+
+      shown.map(s=>`deny ${s} → EPERM`).join("<br>");}
+}
+function planTable(plan){
+  if(!plan){document.getElementById("plantbl").innerHTML="";return;}
+  let t=`<b>namespaces</b> ${plan.namespaces.join(", ")}<br><b>hostname</b> ${esc(plan.hostname)}<br><b>argv</b> ${esc(plan.argv.join(" "))}`;
+  t+=`<br><b>rootfs</b> ${plan.readonly?"read-only":"read-write"}<br><b>hardening</b> no_new_privs, dropped caps, seccomp, minimal /dev`;
+  if(plan.limits.memory_max!=null)t+=`<br><b>memory_max</b> ${plan.limits.memory_max} bytes (best-effort, needs cgroup delegation)`;
+  if(plan.limits.pids_max!=null)t+=`<br><b>pids_max</b> ${plan.limits.pids_max}`;
+  document.getElementById("plantbl").innerHTML=t;
+}
+
+/* ===== controller ===== */
+let plan=null, T=0, playing=false, last=0;
+const DURATION=9000;
+const statusEl=document.getElementById("status"),confEl=document.getElementById("conf"),
+      scrub=document.getElementById("scrub"),clock=document.getElementById("clock"),
+      phaseTag=document.getElementById("phaseTag"),launchBtn=document.getElementById("launch");
+function currentPhase(t){for(const p of PH){if(t>=p.a&&t<p.b)return p.n;}return PH[PH.length-1].n;}
+function frame(now){
+  if(playing){const dt=(now-last)/DURATION;last=now;T=Math.min(1,T+dt);if(T>=1){playing=false;launchBtn.textContent="Replay ▸";}}
+  scrub.value=Math.round(T*1000);clock.textContent=(T*DURATION/1000).toFixed(1)+"s";
+  phaseTag.textContent=currentPhase(T);
+  draw(T,plan);panels(T,plan);
+  requestAnimationFrame(frame);
+}
+function recompute(){
+  try{plan=planFromConfig(parseConfig(confEl.value));statusEl.className="status good";statusEl.textContent="✓ config parses · press Launch";launchBtn.disabled=false;launchBtn.style.opacity=1;}
+  catch(e){plan=null;statusEl.className="status bad";statusEl.textContent="✗ "+e.message;launchBtn.disabled=true;launchBtn.style.opacity=.5;}
+  planTable(plan);
+}
+launchBtn.onclick=()=>{if(!plan)return;if(T>=1)T=0;playing=!playing;last=performance.now();launchBtn.textContent=playing?"Pause":"Resume";if(T===0&&playing)launchBtn.textContent="Pause";};
+scrub.oninput=()=>{playing=false;launchBtn.textContent=T>=1?"Replay ▸":"Resume";T=scrub.value/1000;};
+
 const EXAMPLES={
   "Default":`hostname = cocoonbox\ncwd      = /\nargv     = /bin/busybox sh -c "hostname; echo pid=$$"\nenv      = PATH=/bin`,
-  "Isolated net":`hostname = webbox\ncwd      = /app\nargv     = /usr/bin/python3 -m http.server 8080\nenv      = PATH=/usr/bin:/bin\nnet      = isolated`,
+  "Read-only web":`hostname = webbox\ncwd      = /app\nargv     = /usr/bin/python3 -m http.server 8080\nreadonly = true\nnet      = isolated`,
   "With limits":`hostname = worker\ncwd      = /\nargv     = /bin/sh\nmemory_max = 67108864\npids_max   = 64`,
   "Broken":`hostname = oops\nnet = maybe\nargv = /bin/sh`,
 };
-const esc=s=>String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-const conf=document.getElementById("conf"),statusEl=document.getElementById("status"),
-  diagram=document.getElementById("diagram"),plantbl=document.getElementById("plantbl"),chips=document.getElementById("chips");
-function renderPlan(plan){
-  const inner=`<div class="proc"><div class="cmd">${esc(plan.argv[0])}</div><div class="id">host=${esc(plan.hostname)} · pid=1 · uid=0</div></div>`;
-  let boxes=`<div class="ns-inner">${inner}</div>`;
-  for(let i=plan.namespaces.length-1;i>=0;i--){
-    const n=plan.namespaces[i];
-    boxes=`<div class="ns"><span class="nslabel">${n} namespace</span>${boxes}</div>`;
-  }
-  diagram.innerHTML=`<div class="host">host: kali · uid 1000</div>`+boxes;
-  let t=`<b>namespaces</b> ${plan.namespaces.join(", ")}<br><b>hostname</b> ${esc(plan.hostname)}<br><b>cwd</b> ${esc(plan.cwd)}<br><b>argv</b> ${esc(plan.argv.join(" "))}`;
-  t+=`<br><b>rootfs</b> ${plan.readonly?"read-only":"read-write"}<br><b>hardening</b> no_new_privs, dropped caps, minimal /dev`;
-  if(plan.env.length)t+=`<br><b>env</b> ${plan.env.length} var(s)`;
-  if(plan.limits.memory_max!=null)t+=`<br><b>memory_max</b> ${plan.limits.memory_max} bytes`;
-  if(plan.limits.pids_max!=null)t+=`<br><b>pids_max</b> ${plan.limits.pids_max}`;
-  plantbl.innerHTML=t;
-}
-function update(){
-  try{
-    const cfg=parseConfig(conf.value);const plan=planFromConfig(cfg);
-    statusEl.className="status good";statusEl.textContent="✓ config parses · plan ready";
-    renderPlan(plan);
-  }catch(e){
-    statusEl.className="status bad";statusEl.textContent="✗ config error: "+e.message;
-    diagram.innerHTML='<div class="host" style="color:var(--err)">no plan: fix the config above</div>';plantbl.innerHTML="";
-  }
-}
-Object.keys(EXAMPLES).forEach(name=>{const b=document.createElement("button");b.className="chip";b.textContent=name;b.onclick=()=>{conf.value=EXAMPLES[name];update();};chips.appendChild(b);});
-let deb;conf.addEventListener("input",()=>{clearTimeout(deb);deb=setTimeout(update,100);});
-conf.value=EXAMPLES.Default;update();
-
-/* ===== isolation sequence stepper ===== */
-const SEQ=[
-  {t:"host process",note:"Just a normal process you started, on the host, as your unprivileged user.",id:"host=kali · pid=14872 · uid=1000",rings:[]},
-  {t:"unshare",note:"unshare new user, mount, pid, uts, and ipc namespaces. The process now has its own copies, but is unmapped in the user namespace.",id:"host=kali · pid=14872 · uid=nobody",rings:["user","mount","pid","uts","ipc"]},
-  {t:"map uid → 0",note:"Write the uid and gid maps so our real uid becomes 0 inside the user namespace. This is what lets the next steps work without any real privilege.",id:"host=kali · pid=14872 · uid=0",rings:["user","mount","pid","uts","ipc"]},
-  {t:"fork → pid 1",note:"fork. The child is pid 1 in the new pid namespace: the container's init.",id:"host=kali · pid=1 · uid=0",rings:["user","mount","pid","uts","ipc"]},
-  {t:"pivot_root",note:"Set the hostname, make the mount tree private, pivot_root into the bundle rootfs, mount a fresh /proc, and drop the old root.",id:"host=cocoonbox · pid=1 · uid=0",rings:["user","mount","pid","uts","ipc"]},
-  {t:"exec",note:"exec the requested program. It is now fully inside the container: its own hostname, pid 1, uid 0, its own filesystem and process view.",id:"host=cocoonbox · pid=1 · uid=0",rings:["user","mount","pid","uts","ipc"]},
-];
-let step=0,timer=null;
-const stepsEl=document.getElementById("steps"),noteEl=document.getElementById("stepnote"),seqd=document.getElementById("seqdiagram");
-SEQ.forEach((s,i)=>{const d=document.createElement("span");d.className="step";d.textContent=(i+1)+". "+s.t;stepsEl.appendChild(d);});
-function renderSeq(){
-  [...stepsEl.children].forEach((c,i)=>c.classList.toggle("active",i===step));
-  const s=SEQ[step];noteEl.textContent=s.note;
-  let boxes=`<div class="ns-inner"><div class="proc"><div class="cmd">your process</div><div class="id">${s.id}</div></div></div>`;
-  for(let i=s.rings.length-1;i>=0;i--)boxes=`<div class="ns"><span class="nslabel">${s.rings[i]} namespace</span>${boxes}</div>`;
-  seqd.innerHTML=(s.rings.length?"":'<div class="host">on the host</div>')+boxes;
-}
-document.getElementById("next").onclick=()=>{step=(step+1)%SEQ.length;renderSeq();};
-document.getElementById("prev").onclick=()=>{step=(step-1+SEQ.length)%SEQ.length;renderSeq();};
-document.getElementById("play").onclick=function(){
-  if(timer){clearInterval(timer);timer=null;this.textContent="Play";return;}
-  this.textContent="Pause";timer=setInterval(()=>{step=(step+1)%SEQ.length;renderSeq();if(step===SEQ.length-1){clearInterval(timer);timer=null;document.getElementById("play").textContent="Play";}},1400);
-};
-renderSeq();
+const chips=document.getElementById("chips");
+Object.keys(EXAMPLES).forEach(name=>{const b=document.createElement("button");b.className="chip";b.textContent=name;b.onclick=()=>{confEl.value=EXAMPLES[name];recompute();T=0;playing=false;launchBtn.textContent="Launch container ▸";};chips.appendChild(b);});
+let deb;confEl.addEventListener("input",()=>{clearTimeout(deb);deb=setTimeout(recompute,120);});
+window.addEventListener("resize",resize);
+seedCloud();resize();confEl.value=EXAMPLES.Default;recompute();requestAnimationFrame(frame);
 </script>
 </body>
 </html>
