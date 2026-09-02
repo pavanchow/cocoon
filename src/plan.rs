@@ -35,6 +35,7 @@ pub struct Plan {
     pub argv: Vec<String>,
     pub env: Vec<(String, String)>,
     pub readonly: bool,
+    pub timeout_ms: Option<u64>,
     pub limits: Limits,
 }
 
@@ -70,6 +71,7 @@ impl Plan {
             argv: cfg.argv.clone(),
             env: cfg.env.clone(),
             readonly: cfg.readonly,
+            timeout_ms: cfg.timeout_ms,
             limits: Limits {
                 memory_max: cfg.memory_max,
                 pids_max: cfg.pids_max,
@@ -114,6 +116,9 @@ impl Plan {
         }
         if let Some(p) = self.limits.pids_max {
             s.push_str(&format!("pids_max   : {p}\n"));
+        }
+        if let Some(t) = self.timeout_ms {
+            s.push_str(&format!("timeout    : {t} ms\n"));
         }
         s
     }

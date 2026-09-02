@@ -63,6 +63,23 @@ fn rejects_bad_net() {
 }
 
 #[test]
+fn parses_timeout_formats() {
+    let ms = |s: &str| Config::parse(&format!("argv=/bin/sh\ntimeout = {s}")).unwrap().timeout_ms;
+    assert_eq!(ms("5s"), Some(5_000));
+    assert_eq!(ms("500ms"), Some(500));
+    assert_eq!(ms("2m"), Some(120_000));
+    assert_eq!(ms("3"), Some(3_000), "a bare number is seconds");
+    assert_eq!(Config::parse("argv=/bin/sh").unwrap().timeout_ms, None);
+}
+
+#[test]
+fn rejects_bad_timeout() {
+    let e = Config::parse("argv=/bin/sh\ntimeout = later").unwrap_err();
+    assert!(format!("{e}").contains("timeout must be"), "got: {e}");
+    assert!(Config::parse("argv=/bin/sh\ntimeout = 5x").is_err());
+}
+
+#[test]
 fn split_args_honors_quotes() {
     assert_eq!(split_args("a b c").unwrap(), vec!["a", "b", "c"]);
     assert_eq!(

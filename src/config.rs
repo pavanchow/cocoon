@@ -21,6 +21,8 @@ pub struct Config {
     pub readonly: bool,
     pub memory_max: Option<u64>,
     pub pids_max: Option<u64>,
+    /// Wall-clock limit in milliseconds; the container is killed if it exceeds it.
+    pub timeout_ms: Option<u64>,
 }
 
 impl Default for Config {
@@ -34,6 +36,7 @@ impl Default for Config {
             readonly: false,
             memory_max: None,
             pids_max: None,
+            timeout_ms: None,
         }
     }
 }
@@ -92,6 +95,7 @@ impl Config {
                 }
                 "memory_max" => c.memory_max = Some(parse_u64(value, i + 1, "memory_max")?),
                 "pids_max" => c.pids_max = Some(parse_u64(value, i + 1, "pids_max")?),
+                "timeout" => c.timeout_ms = Some(parse_duration(value, i + 1)?),
                 other => {
                     return Err(Error::Config(format!(
                         "line {}: unknown key '{other}'",
@@ -127,6 +131,29 @@ fn strip_comment(line: &str) -> &str {
 fn parse_u64(v: &str, line: usize, key: &str) -> Result<u64> {
     v.parse::<u64>()
         .map_err(|_| Error::Config(format!("line {line}: {key} must be a non-negative integer")))
+}
+
+/// Parse a duration like `5s`, `500ms`, `2m`, or a bare number of seconds, to ms.
+fn parse_duration(v: &str, line: usize) -> Result<u64> {
+    let v = v.trim();
+    let (num, mult): (&str, u64) = if let Some(n) = v.strip_suffix("ms") {
+        (n, 1)
+    } else if let Some(n) = v.strip_suffix('s') {
+        (n, 1000)
+    } else if let Some(n) = v.strip_suffix('m') {
+        (n, 60_000)
+    } else {
+        (v, 1000)
+    };
+    num.trim()
+        .parse::<u64>()
+        .ok()
+        .and_then(|n| n.checked_mul(mult))
+        .ok_or_else(|| {
+            Error::Config(format!(
+                "line {line}: timeout must be like '5s', '500ms', '2m', or a number of seconds"
+            ))
+        })
 }
 
 /// Split a command line into arguments, honoring double quotes so that

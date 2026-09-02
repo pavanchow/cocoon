@@ -14,15 +14,47 @@ use crate::error::{Error, Result};
 use crate::plan::{Namespace, Plan};
 use nix::mount::{mount, umount2, MntFlags, MsFlags};
 use nix::sched::{unshare, CloneFlags};
-use nix::sys::signal::{sigaction, SaFlags, SigAction, SigHandler, SigSet, Signal};
-use nix::sys::wait::{waitpid, WaitStatus};
+use nix::sys::resource::{getrusage, UsageWho};
+use nix::sys::signal::{kill, sigaction, SaFlags, SigAction, SigHandler, SigSet, Signal};
+use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
 use nix::unistd::{chdir, execvpe, fork, pivot_root, sethostname, ForkResult};
 use std::ffi::CString;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicI32, Ordering};
+use std::time::{Duration, Instant};
 
 fn rt<E: std::fmt::Display>(ctx: &str) -> impl Fn(E) -> Error + '_ {
     move |e| Error::Runtime(format!("{ctx}: {e}"))
+}
+
+// Read all currently-available bytes from a nonblocking fd into `buf`. On EOF
+// (read returns 0) it closes the fd and clears `open`; on EAGAIN it stops until
+// the next poll. Used to drain the captured stdout/stderr pipes without threads.
+fn drain_fd(fd: i32, open: &mut bool, buf: &mut Vec<u8>) {
+    if !*open {
+        return;
+    }
+    let mut tmp = [0u8; 8192];
+    loop {
+        let n = unsafe { libc::read(fd, tmp.as_mut_ptr() as *mut libc::c_void, tmp.len()) };
+        if n > 0 {
+            buf.extend_from_slice(&tmp[..n as usize]);
+        } else if n == 0 {
+            *open = false;
+            unsafe { libc::close(fd) };
+            return;
+        } else {
+            match std::io::Error::last_os_error().raw_os_error() {
+                Some(libc::EAGAIN) => return,
+                Some(libc::EINTR) => continue,
+                _ => {
+                    *open = false;
+                    unsafe { libc::close(fd) };
+                    return;
+                }
+            }
+        }
+    }
 }
 
 // Set once the child exists, so the signal handler can forward to it.
@@ -115,6 +147,211 @@ pub fn run(plan: &Plan, rootfs: &Path) -> Result<i32> {
                 std::process::exit(127);
             }
         },
+    }
+}
+
+/// Run the container while capturing stdout/stderr and measuring it, enforcing an
+/// optional wall-clock timeout. Returns a structured [`Outcome`].
+pub fn run_measured(plan: &Plan, rootfs: &Path) -> Result<crate::Outcome> {
+    if !rootfs.is_dir() {
+        return Err(Error::Runtime(format!(
+            "rootfs '{}' is not a directory",
+            rootfs.display()
+        )));
+    }
+    let rootfs = rootfs.canonicalize().map_err(rt("canonicalize rootfs"))?;
+    let outer_uid = nix::unistd::getuid().as_raw();
+    let outer_gid = nix::unistd::getgid().as_raw();
+
+    let mut flags = CloneFlags::empty();
+    for ns in &plan.namespaces {
+        flags |= match ns {
+            Namespace::User => CloneFlags::CLONE_NEWUSER,
+            Namespace::Mount => CloneFlags::CLONE_NEWNS,
+            Namespace::Pid => CloneFlags::CLONE_NEWPID,
+            Namespace::Uts => CloneFlags::CLONE_NEWUTS,
+            Namespace::Ipc => CloneFlags::CLONE_NEWIPC,
+            Namespace::Net => CloneFlags::CLONE_NEWNET,
+        };
+    }
+    unshare(flags).map_err(rt("unshare namespaces"))?;
+    if plan.namespaces.contains(&Namespace::User) {
+        std::fs::write("/proc/self/uid_map", format!("0 {outer_uid} 1")).map_err(rt("write uid_map"))?;
+        let _ = std::fs::write("/proc/self/setgroups", "deny");
+        std::fs::write("/proc/self/gid_map", format!("0 {outer_gid} 1")).map_err(rt("write gid_map"))?;
+    }
+
+    // Pipes to capture the child's stdout and stderr.
+    let mut op = [0i32; 2];
+    let mut ep = [0i32; 2];
+    if unsafe { libc::pipe(op.as_mut_ptr()) } != 0 || unsafe { libc::pipe(ep.as_mut_ptr()) } != 0 {
+        return Err(Error::Runtime("pipe failed".into()));
+    }
+    let cgroup = setup_cgroup(&plan.limits);
+    let start = Instant::now();
+
+    match unsafe { fork() }.map_err(rt("fork"))? {
+        ForkResult::Child => {
+            unsafe {
+                libc::dup2(op[1], 1);
+                libc::dup2(ep[1], 2);
+                libc::close(op[0]);
+                libc::close(op[1]);
+                libc::close(ep[0]);
+                libc::close(ep[1]);
+            }
+            match child_setup(plan, &rootfs) {
+                Ok(never) => match never {},
+                Err(e) => {
+                    eprintln!("cocoon: {e}");
+                    std::process::exit(127);
+                }
+            }
+        }
+        ForkResult::Parent { child } => {
+            if let Some(cg) = &cgroup {
+                let _ = std::fs::write(cg.join("cgroup.procs"), child.as_raw().to_string());
+            }
+            unsafe {
+                libc::close(op[1]);
+                libc::close(ep[1]);
+                // Nonblocking so one silent stream never stalls the drain loop.
+                libc::fcntl(op[0], libc::F_SETFL, libc::O_NONBLOCK);
+                libc::fcntl(ep[0], libc::F_SETFL, libc::O_NONBLOCK);
+            }
+
+            // Drain both pipes with a poll loop in this same thread. We cannot use
+            // reader threads: after unshare(CLONE_NEWPID) the kernel refuses to
+            // create threads in this process (a new thread cannot cross the pid
+            // namespace boundary), so std::thread::spawn fails EINVAL here. Polling
+            // in-line drains as data arrives, so a chatty child never deadlocks on a
+            // full pipe, while we also poll for exit and the timeout.
+            let deadline = plan.timeout_ms.map(Duration::from_millis);
+            let mut timed_out = false;
+            let mut out_buf = Vec::new();
+            let mut err_buf = Vec::new();
+            let mut out_open = true;
+            let mut err_open = true;
+            let mut reaped: Option<WaitStatus> = None;
+            let mut reap_at: Option<Instant> = None;
+            let mut wall_ms = 0u128;
+            // Once pid 1 is reaped the kernel tears down its pid namespace, so any
+            // straggler still holding a pipe write end dies and the fd EOFs. Untrusted
+            // code should not be able to wedge us regardless, so cap the post-reap
+            // drain and force the fds closed if a straggler lingers past it.
+            const DRAIN_GRACE: Duration = Duration::from_millis(500);
+            loop {
+                // Only the still-open fds go to poll; a closed fd would spin on POLLNVAL.
+                let mut pfds: [libc::pollfd; 2] =
+                    [libc::pollfd { fd: -1, events: libc::POLLIN, revents: 0 }; 2];
+                let mut n = 0usize;
+                if out_open {
+                    pfds[n].fd = op[0];
+                    n += 1;
+                }
+                if err_open {
+                    pfds[n].fd = ep[0];
+                    n += 1;
+                }
+                if n > 0 {
+                    // Cap the wait so we re-check exit and the deadline promptly.
+                    let mut wait_ms = 20i64;
+                    if let Some(d) = deadline {
+                        let el = start.elapsed();
+                        wait_ms = if el >= d { 0 } else { wait_ms.min((d - el).as_millis() as i64) };
+                    }
+                    unsafe { libc::poll(pfds.as_mut_ptr(), n as libc::nfds_t, wait_ms as libc::c_int) };
+                } else if reaped.is_none() {
+                    std::thread::sleep(Duration::from_millis(3));
+                }
+                drain_fd(op[0], &mut out_open, &mut out_buf);
+                drain_fd(ep[0], &mut err_open, &mut err_buf);
+
+                if reaped.is_none() {
+                    match waitpid(child, Some(WaitPidFlag::WNOHANG)) {
+                        Ok(WaitStatus::StillAlive) => {
+                            if let Some(d) = deadline {
+                                if start.elapsed() >= d {
+                                    let _ = kill(child, Signal::SIGKILL);
+                                    timed_out = true;
+                                }
+                            }
+                        }
+                        Ok(s) => {
+                            wall_ms = start.elapsed().as_millis();
+                            reaped = Some(s);
+                            reap_at = Some(Instant::now());
+                        }
+                        Err(nix::errno::Errno::EINTR) => {}
+                        Err(e) => {
+                            let _ = kill(child, Signal::SIGKILL);
+                            if out_open {
+                                unsafe { libc::close(op[0]) };
+                            }
+                            if err_open {
+                                unsafe { libc::close(ep[0]) };
+                            }
+                            if let Some(cg) = &cgroup {
+                                let _ = std::fs::remove_dir(cg);
+                            }
+                            return Err(rt("waitpid")(e));
+                        }
+                    }
+                }
+                if reaped.is_some() {
+                    let grace_expired = reap_at.map_or(false, |t| t.elapsed() >= DRAIN_GRACE);
+                    if (!out_open && !err_open) || grace_expired {
+                        if out_open {
+                            unsafe { libc::close(op[0]) };
+                        }
+                        if err_open {
+                            unsafe { libc::close(ep[0]) };
+                        }
+                        break;
+                    }
+                }
+            }
+            let status = reaped.expect("loop only breaks after the child is reaped");
+            let exit_code = match status {
+                WaitStatus::Exited(_, c) => c,
+                WaitStatus::Signaled(_, s, _) => 128 + s as i32,
+                _ => -1,
+            };
+            let peak_mem_kib = getrusage(UsageWho::RUSAGE_CHILDREN)
+                .ok()
+                .map(|u| u.max_rss() as u64);
+            let mut oom_killed = false;
+            if let Some(cg) = &cgroup {
+                if let Ok(ev) = std::fs::read_to_string(cg.join("memory.events")) {
+                    for l in ev.lines() {
+                        if let Some(n) = l.strip_prefix("oom_kill ") {
+                            if n.trim().parse::<u64>().unwrap_or(0) > 0 {
+                                oom_killed = true;
+                            }
+                        }
+                    }
+                }
+            }
+            if !oom_killed && !timed_out && plan.limits.memory_max.is_some() {
+                if let WaitStatus::Signaled(_, Signal::SIGKILL, _) = status {
+                    oom_killed = true;
+                }
+            }
+            if let Some(cg) = &cgroup {
+                let _ = std::fs::remove_dir(cg);
+            }
+            let stdout = String::from_utf8_lossy(&out_buf).into_owned();
+            let stderr = String::from_utf8_lossy(&err_buf).into_owned();
+            Ok(crate::Outcome {
+                exit_code,
+                timed_out,
+                oom_killed,
+                wall_ms,
+                peak_mem_kib,
+                stdout,
+                stderr,
+            })
+        }
     }
 }
 
