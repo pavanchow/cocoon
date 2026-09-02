@@ -1,6 +1,8 @@
 # Design
 
-Cocoon is a container runtime you can read. Every choice serves that: a tiny surface, one concept per file, and a hard split between deciding what to do and doing it.
+Cocoon is a safe code-execution sandbox for AI agents, built on a container runtime you can read. The job is narrow: take a command, run it isolated and deprivileged and rootless, bound it in time and memory, and return a machine-readable result. Every choice serves two things at once, a tiny readable surface and a usable agent interface, with a hard split between deciding what to do and doing it.
+
+The whole runtime is small enough to audit in a sitting, which matters when the thing you are trusting is what stands between your host and code an agent just generated.
 
 ## Decide, then execute
 
@@ -48,6 +50,24 @@ therefore treats limits as best effort. It enforces them where it can, and where
 it cannot it prints a warning and runs without them rather than silently
 claiming a limit it did not set. Full rootless enforcement would need systemd
 dbus integration, which is deliberately out of scope.
+
+## Measured execution
+
+`cocoon run` forwards the child's exit code and is done. `cocoon exec` is the agent path: it captures stdout and stderr, times the run, records peak memory, enforces a timeout, and returns a structured `Outcome`. The child's stdout and stderr are redirected into pipes; the parent drains them with a non-blocking `poll` loop in the same thread while it also polls `waitpid` and the deadline. Draining as data arrives (rather than reading after exit) is what keeps a chatty program from deadlocking on a full pipe. The loop cannot use reader threads: `unshare(CLONE_NEWPID)` makes the kernel refuse to create new threads in the parent (a thread cannot cross the pid-namespace boundary), so a threaded drain fails `EINVAL`. On the deadline the parent `SIGKILL`s the child and marks `timed_out`. Peak memory comes from `getrusage(RUSAGE_CHILDREN)`; OOM is read from the cgroup `memory.events` where a cgroup is in play.
+
+## Filesystem policy
+
+A `mount = SOURCE:TARGET:ro|rw` line binds a host directory into the sandbox, so an agent can hand in a writable `/work` and read results back while the base stays read-only. The bind happens in the child after `pivot_root` but before the old root is detached, because the host source is only reachable then (under `/.oldroot`). A read-only mount is bound and then remounted read-only, since a bind cannot be made read-only in one step. The base read-only remount is non-recursive, so it does not clobber a writable sub-mount like `/work`, and user binds are non-recursive too, so a host sub-mount underneath the source is never pulled in silently.
+
+The read-only guarantee holds against hostile in-sandbox code, and not only because `mount`/`umount2` are seccomp-denied. The executed process runs with an empty capability set: dropping the whole bounding set, combined with the capability transform on `execve`, zeroes the effective set (`CapEff` is `0`, verified in a running container). With no `CAP_SYS_ADMIN` it cannot remount anything, so `mount_setattr` and the rest of the modern mount API return `EPERM` at the kernel. Those syscalls are on the seccomp deny-list as well, as a second layer that would still hold if a capability were ever reintroduced.
+
+## The MCP server
+
+`cocoon mcp` is the agent-facing front door. It speaks JSON-RPC 2.0 over stdio with newline-delimited messages (the MCP stdio framing) and implements `initialize`, `tools/list`, `tools/call`, and notifications. It exposes one tool, `run_in_sandbox`, which turns the tool arguments into a `Config`, plans it, runs it through the same measured executor, and returns the `Outcome` JSON as the tool result text. The JSON-RPC plumbing is hand-rolled; only value parsing and serialization use `serde_json`, kept to that one module so the isolation core stays dependency-free. Requests are handled one line at a time, so the on-first-use build of the default busybox rootfs cannot race.
+
+## Profiles
+
+`profile = strict | build` fills in defaults so a caller does not have to spell out the same lockdown every time: `strict` for untrusted code (network off, read-only base, tight timeout and memory), `build` for producing artifacts (writable base, more memory, a longer timeout, still no network). Profiles are resolved in `Config::parse` after the whole file is read, and only for keys the file did not set explicitly, so an explicit line always wins and order does not matter. Hardening (dropped capabilities, `no_new_privs`, seccomp) is unconditional and not something a profile can turn off.
 
 ## Non-goals
 

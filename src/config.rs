@@ -20,6 +20,38 @@ pub struct Mount {
     pub readonly: bool,
 }
 
+/// A named bundle of sensible defaults. `strict` locks a run down for untrusted
+/// code (network off, read-only base, tight timeout and memory); `build` loosens
+/// it for compiling and generating artifacts (writable base, more memory, a
+/// longer timeout), still with the network off. Hardening (dropped capabilities,
+/// `no_new_privs`, seccomp) is always on and not affected by the profile.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Profile {
+    Strict,
+    Build,
+}
+
+impl Profile {
+    fn apply(self, c: &mut Config, seen: &std::collections::HashSet<&str>) {
+        let (isolate_net, readonly, timeout_ms, memory_max) = match self {
+            Profile::Strict => (true, true, 5_000, 128 * 1024 * 1024),
+            Profile::Build => (true, false, 300_000, 1024 * 1024 * 1024),
+        };
+        if !seen.contains("net") {
+            c.isolate_net = isolate_net;
+        }
+        if !seen.contains("readonly") {
+            c.readonly = readonly;
+        }
+        if !seen.contains("timeout") {
+            c.timeout_ms = Some(timeout_ms);
+        }
+        if !seen.contains("memory_max") {
+            c.memory_max = Some(memory_max);
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Config {
     pub hostname: String,
@@ -57,6 +89,8 @@ impl Config {
     pub fn parse(text: &str) -> Result<Config> {
         let mut c = Config::default();
         let mut saw_argv = false;
+        let mut profile: Option<Profile> = None;
+        let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
         for (i, raw) in text.lines().enumerate() {
             let line = strip_comment(raw).trim();
             if line.is_empty() {
@@ -67,6 +101,7 @@ impl Config {
                 .ok_or_else(|| Error::Config(format!("line {}: expected 'key = value'", i + 1)))?;
             let key = key.trim();
             let value = value.trim();
+            seen.insert(key);
             match key {
                 "hostname" => c.hostname = value.to_string(),
                 "cwd" => c.cwd = value.to_string(),
@@ -109,6 +144,18 @@ impl Config {
                 "pids_max" => c.pids_max = Some(parse_u64(value, i + 1, "pids_max")?),
                 "timeout" => c.timeout_ms = Some(parse_duration(value, i + 1)?),
                 "mount" => c.mounts.push(parse_mount(value, i + 1)?),
+                "profile" => {
+                    profile = Some(match value {
+                        "strict" => Profile::Strict,
+                        "build" => Profile::Build,
+                        other => {
+                            return Err(Error::Config(format!(
+                                "line {}: profile must be 'strict' or 'build', got '{other}'",
+                                i + 1
+                            )))
+                        }
+                    })
+                }
                 other => {
                     return Err(Error::Config(format!(
                         "line {}: unknown key '{other}'",
@@ -116,6 +163,11 @@ impl Config {
                     )))
                 }
             }
+        }
+        // A profile fills in defaults, but only for keys not set explicitly, so an
+        // explicit line always wins regardless of where it sits in the file.
+        if let Some(p) = profile {
+            p.apply(&mut c, &seen);
         }
         if !saw_argv || c.argv.is_empty() {
             return Err(Error::Config("config must set a non-empty 'argv'".into()));

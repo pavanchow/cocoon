@@ -111,6 +111,40 @@ fn rejects_bad_mount() {
 }
 
 #[test]
+fn profile_strict_sets_locked_down_defaults() {
+    let c = Config::parse("argv=/bin/sh\nprofile = strict").unwrap();
+    assert!(c.readonly);
+    assert!(c.isolate_net);
+    assert_eq!(c.timeout_ms, Some(5_000));
+    assert_eq!(c.memory_max, Some(128 * 1024 * 1024));
+}
+
+#[test]
+fn profile_build_is_writable_with_more_memory() {
+    let c = Config::parse("argv=/bin/sh\nprofile = build").unwrap();
+    assert!(!c.readonly, "build leaves the base writable");
+    assert!(c.isolate_net, "build still turns the network off");
+    assert_eq!(c.memory_max, Some(1024 * 1024 * 1024));
+    assert_eq!(c.timeout_ms, Some(300_000));
+}
+
+#[test]
+fn explicit_keys_override_the_profile_regardless_of_order() {
+    // Explicit lines win whether they come before or after `profile`.
+    let c = Config::parse("argv=/bin/sh\nreadonly = false\nprofile = strict\ntimeout = 30s")
+        .unwrap();
+    assert!(!c.readonly, "explicit readonly=false beats the strict default");
+    assert_eq!(c.timeout_ms, Some(30_000), "explicit timeout beats the profile");
+    assert!(c.isolate_net, "unspecified keys still take the profile default");
+}
+
+#[test]
+fn rejects_bad_profile() {
+    let e = Config::parse("argv=/bin/sh\nprofile = paranoid").unwrap_err();
+    assert!(format!("{e}").contains("profile must be"), "got: {e}");
+}
+
+#[test]
 fn split_args_honors_quotes() {
     assert_eq!(split_args("a b c").unwrap(), vec!["a", "b", "c"]);
     assert_eq!(

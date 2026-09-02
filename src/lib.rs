@@ -138,6 +138,7 @@ hostname = cocoon\n\
 cwd      = /\n\
 argv     = /bin/sh\n\
 env      = PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n\
+# profile    = strict           # strict (locked down) or build (writable, more memory)\n\
 # net        = isolated\n\
 # readonly   = true\n\
 # timeout    = 5s               # 5s, 500ms, 2m, or a bare number of seconds\n\
