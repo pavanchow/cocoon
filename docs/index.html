@@ -183,7 +183,7 @@ function splitArgs(s){
 }
 function stripComment(line){let inq=false,prev=" ";for(let i=0;i<line.length;i++){const c=line[i];if(c==='"')inq=!inq;else if(c==='#'&&!inq&&(i===0||/\s/.test(prev)))return line.slice(0,i);prev=c;}return line;}
 function parseConfig(text){
-  const c={hostname:"cocoon",cwd:"/",argv:[],env:[],isolate_net:false,memory_max:null,pids_max:null};
+  const c={hostname:"cocoon",cwd:"/",argv:[],env:[],isolate_net:false,readonly:false,memory_max:null,pids_max:null};
   let sawArgv=false;
   const lines=text.split("\n");
   for(let i=0;i<lines.length;i++){
@@ -197,6 +197,7 @@ function parseConfig(text){
       case "argv":c.argv=splitArgs(value);sawArgv=true;break;
       case "env":{const e=value.indexOf("=");if(e<0)throw new Error(`line ${i+1}: env must be KEY=VALUE`);c.env.push([value.slice(0,e).trim(),value.slice(e+1)]);break;}
       case "net":if(value==="host")c.isolate_net=false;else if(value==="isolated")c.isolate_net=true;else throw new Error(`line ${i+1}: net must be 'host' or 'isolated', got '${value}'`);break;
+      case "readonly":if(value==="true")c.readonly=true;else if(value==="false")c.readonly=false;else throw new Error(`line ${i+1}: readonly must be 'true' or 'false', got '${value}'`);break;
       case "memory_max":c.memory_max=uint(value,i+1,"memory_max");break;
       case "pids_max":c.pids_max=uint(value,i+1,"pids_max");break;
       default:throw new Error(`line ${i+1}: unknown key '${key}'`);
@@ -205,12 +206,12 @@ function parseConfig(text){
   if(!sawArgv||c.argv.length===0)throw new Error("config must set a non-empty 'argv'");
   return c;
 }
-function uint(v,line,key){if(!/^\d+$/.test(v))throw new Error(`line ${line}: ${key} must be a non-negative integer`);return parseInt(v,10);}
+function uint(v,line,key){if(!/^\d+$/.test(v)||BigInt(v)>18446744073709551615n)throw new Error(`line ${line}: ${key} must be a non-negative integer`);return Number(v);}
 function planFromConfig(c){
   if(c.argv.length===0)throw new Error("argv is empty; nothing to run");
   if(!c.cwd.startsWith("/"))throw new Error(`cwd must be an absolute path, got '${c.cwd}'`);
   const ns=["user","mount","pid","uts","ipc"];if(c.isolate_net)ns.push("net");
-  return {namespaces:ns,hostname:c.hostname,cwd:c.cwd,argv:c.argv,env:c.env,limits:{memory_max:c.memory_max,pids_max:c.pids_max}};
+  return {namespaces:ns,hostname:c.hostname,cwd:c.cwd,argv:c.argv,env:c.env,readonly:c.readonly,limits:{memory_max:c.memory_max,pids_max:c.pids_max}};
 }
 
 /* ===== simulator UI ===== */
@@ -232,6 +233,7 @@ function renderPlan(plan){
   }
   diagram.innerHTML=`<div class="host">host: kali · uid 1000</div>`+boxes;
   let t=`<b>namespaces</b> ${plan.namespaces.join(", ")}<br><b>hostname</b> ${esc(plan.hostname)}<br><b>cwd</b> ${esc(plan.cwd)}<br><b>argv</b> ${esc(plan.argv.join(" "))}`;
+  t+=`<br><b>rootfs</b> ${plan.readonly?"read-only":"read-write"}<br><b>hardening</b> no_new_privs, dropped caps, minimal /dev`;
   if(plan.env.length)t+=`<br><b>env</b> ${plan.env.length} var(s)`;
   if(plan.limits.memory_max!=null)t+=`<br><b>memory_max</b> ${plan.limits.memory_max} bytes`;
   if(plan.limits.pids_max!=null)t+=`<br><b>pids_max</b> ${plan.limits.pids_max}`;

@@ -34,6 +34,7 @@ pub struct Plan {
     pub cwd: String,
     pub argv: Vec<String>,
     pub env: Vec<(String, String)>,
+    pub readonly: bool,
     pub limits: Limits,
 }
 
@@ -68,6 +69,7 @@ impl Plan {
             cwd: cfg.cwd.clone(),
             argv: cfg.argv.clone(),
             env: cfg.env.clone(),
+            readonly: cfg.readonly,
             limits: Limits {
                 memory_max: cfg.memory_max,
                 pids_max: cfg.pids_max,
@@ -95,6 +97,15 @@ impl Plan {
         s.push_str(&format!("hostname   : {}\n", self.hostname));
         s.push_str(&format!("cwd        : {}\n", self.cwd));
         s.push_str(&format!("argv       : {}\n", self.argv.join(" ")));
+        s.push_str(&format!(
+            "rootfs     : {}\n",
+            if self.readonly {
+                "read-only"
+            } else {
+                "read-write"
+            }
+        ));
+        s.push_str("hardening  : no_new_privs, dropped capabilities, minimal /dev\n");
         if !self.env.is_empty() {
             s.push_str(&format!("env        : {} var(s)\n", self.env.len()));
         }

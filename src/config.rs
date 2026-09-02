@@ -18,6 +18,7 @@ pub struct Config {
     pub argv: Vec<String>,
     pub env: Vec<(String, String)>,
     pub isolate_net: bool,
+    pub readonly: bool,
     pub memory_max: Option<u64>,
     pub pids_max: Option<u64>,
 }
@@ -30,6 +31,7 @@ impl Default for Config {
             argv: Vec::new(),
             env: Vec::new(),
             isolate_net: false,
+            readonly: false,
             memory_max: None,
             pids_max: None,
         }
@@ -71,6 +73,18 @@ impl Config {
                         other => {
                             return Err(Error::Config(format!(
                                 "line {}: net must be 'host' or 'isolated', got '{other}'",
+                                i + 1
+                            )))
+                        }
+                    }
+                }
+                "readonly" => {
+                    c.readonly = match value {
+                        "true" => true,
+                        "false" => false,
+                        other => {
+                            return Err(Error::Config(format!(
+                                "line {}: readonly must be 'true' or 'false', got '{other}'",
                                 i + 1
                             )))
                         }
