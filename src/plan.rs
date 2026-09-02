@@ -2,7 +2,7 @@
 //! what to run, and which limits to apply. It is computed from a [`Config`] with
 //! no side effects, so the whole decision can be unit-tested on any OS. The
 //! Linux executor consumes a Plan; it never re-reads the config.
-use crate::config::Config;
+use crate::config::{Config, Mount};
 use crate::error::{Error, Result};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -37,6 +37,7 @@ pub struct Plan {
     pub readonly: bool,
     pub timeout_ms: Option<u64>,
     pub limits: Limits,
+    pub mounts: Vec<Mount>,
 }
 
 impl Plan {
@@ -76,6 +77,7 @@ impl Plan {
                 memory_max: cfg.memory_max,
                 pids_max: cfg.pids_max,
             },
+            mounts: cfg.mounts.clone(),
         })
     }
 
@@ -119,6 +121,14 @@ impl Plan {
         }
         if let Some(t) = self.timeout_ms {
             s.push_str(&format!("timeout    : {t} ms\n"));
+        }
+        for m in &self.mounts {
+            s.push_str(&format!(
+                "mount      : {} -> {} ({})\n",
+                m.source,
+                m.target,
+                if m.readonly { "ro" } else { "rw" }
+            ));
         }
         s
     }

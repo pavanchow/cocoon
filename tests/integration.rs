@@ -1,4 +1,4 @@
-use cocoon::config::{split_args, Config};
+use cocoon::config::{split_args, Config, Mount};
 use cocoon::plan::{Namespace, Plan};
 use cocoon::{Container, Error, State};
 
@@ -77,6 +77,37 @@ fn rejects_bad_timeout() {
     let e = Config::parse("argv=/bin/sh\ntimeout = later").unwrap_err();
     assert!(format!("{e}").contains("timeout must be"), "got: {e}");
     assert!(Config::parse("argv=/bin/sh\ntimeout = 5x").is_err());
+}
+
+#[test]
+fn parses_repeatable_mounts() {
+    let c =
+        Config::parse("argv=/bin/sh\nmount = /host/a:/work:rw\nmount = /host/b:/in:ro").unwrap();
+    assert_eq!(
+        c.mounts,
+        vec![
+            Mount { source: "/host/a".into(), target: "/work".into(), readonly: false },
+            Mount { source: "/host/b".into(), target: "/in".into(), readonly: true },
+        ]
+    );
+}
+
+#[test]
+fn rejects_bad_mount() {
+    assert!(
+        Config::parse("argv=/bin/sh\nmount = /host/a:/work").is_err(),
+        "missing ro/rw flag"
+    );
+    assert!(
+        Config::parse("argv=/bin/sh\nmount = rel:/work:rw").is_err(),
+        "relative source"
+    );
+    assert!(
+        Config::parse("argv=/bin/sh\nmount = /host/a:rel:rw").is_err(),
+        "relative target"
+    );
+    let e = Config::parse("argv=/bin/sh\nmount = /host/a:/work:xx").unwrap_err();
+    assert!(format!("{e}").contains("mount flag must be"), "got: {e}");
 }
 
 #[test]

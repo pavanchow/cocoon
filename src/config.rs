@@ -11,6 +11,15 @@
 //!   pids_max   = 64                                       # optional
 use crate::error::{Error, Result};
 
+/// A host directory bound into the container. Lets an agent hand the sandbox a
+/// writable `/work` and read results back, or share inputs read-only.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Mount {
+    pub source: String,
+    pub target: String,
+    pub readonly: bool,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Config {
     pub hostname: String,
@@ -23,6 +32,8 @@ pub struct Config {
     pub pids_max: Option<u64>,
     /// Wall-clock limit in milliseconds; the container is killed if it exceeds it.
     pub timeout_ms: Option<u64>,
+    /// Host directories bound into the rootfs. May repeat.
+    pub mounts: Vec<Mount>,
 }
 
 impl Default for Config {
@@ -37,6 +48,7 @@ impl Default for Config {
             memory_max: None,
             pids_max: None,
             timeout_ms: None,
+            mounts: Vec::new(),
         }
     }
 }
@@ -96,6 +108,7 @@ impl Config {
                 "memory_max" => c.memory_max = Some(parse_u64(value, i + 1, "memory_max")?),
                 "pids_max" => c.pids_max = Some(parse_u64(value, i + 1, "pids_max")?),
                 "timeout" => c.timeout_ms = Some(parse_duration(value, i + 1)?),
+                "mount" => c.mounts.push(parse_mount(value, i + 1)?),
                 other => {
                     return Err(Error::Config(format!(
                         "line {}: unknown key '{other}'",
@@ -154,6 +167,37 @@ fn parse_duration(v: &str, line: usize) -> Result<u64> {
                 "line {line}: timeout must be like '5s', '500ms', '2m', or a number of seconds"
             ))
         })
+}
+
+/// Parse `SOURCE:TARGET:ro|rw`, e.g. `mount = /host/data:/work:rw`. Both paths
+/// must be absolute and the flag must be `ro` or `rw`.
+fn parse_mount(v: &str, line: usize) -> Result<Mount> {
+    let parts: Vec<&str> = v.split(':').map(str::trim).collect();
+    if parts.len() != 3 {
+        return Err(Error::Config(format!(
+            "line {line}: mount must be 'SOURCE:TARGET:ro|rw'"
+        )));
+    }
+    let (source, target, flag) = (parts[0], parts[1], parts[2]);
+    if !source.starts_with('/') || !target.starts_with('/') {
+        return Err(Error::Config(format!(
+            "line {line}: mount source and target must be absolute paths"
+        )));
+    }
+    let readonly = match flag {
+        "ro" => true,
+        "rw" => false,
+        other => {
+            return Err(Error::Config(format!(
+                "line {line}: mount flag must be 'ro' or 'rw', got '{other}'"
+            )))
+        }
+    };
+    Ok(Mount {
+        source: source.to_string(),
+        target: target.to_string(),
+        readonly,
+    })
 }
 
 /// Split a command line into arguments, honoring double quotes so that

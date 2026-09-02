@@ -10,6 +10,7 @@
 //!    optionally remount the rootfs read-only, drop capabilities and set
 //!    `no_new_privs`, then `exec`.
 #![cfg(target_os = "linux")]
+use crate::config::Mount;
 use crate::error::{Error, Result};
 use crate::plan::{Namespace, Plan};
 use nix::mount::{mount, umount2, MntFlags, MsFlags};
@@ -402,6 +403,12 @@ fn child_setup(plan: &Plan, rootfs: &Path) -> Result<Never> {
 
     setup_dev();
 
+    // Bind the requested host directories in. The host tree is still reachable
+    // under /.oldroot, so this must happen before that old root is detached.
+    for m in &plan.mounts {
+        apply_bind_mount(m)?;
+    }
+
     // The old root is still visible under /.oldroot; drop it now.
     umount2("/.oldroot", MntFlags::MNT_DETACH).map_err(rt("umount old root"))?;
     let _ = std::fs::remove_dir("/.oldroot");
@@ -446,6 +453,47 @@ fn child_setup(plan: &Plan, rootfs: &Path) -> Result<Never> {
 
     execvpe(&argv[0], &argv, &envp).map_err(rt("exec"))?;
     unreachable!("execvpe returns only on error")
+}
+
+/// Bind one host directory (still reachable under `/.oldroot`) onto its target
+/// inside the new rootfs. A read-only mount is bound first, then remounted
+/// read-only, since a bind mount cannot be made read-only in a single step.
+fn apply_bind_mount(m: &Mount) -> Result<()> {
+    let src = PathBuf::from("/.oldroot").join(m.source.trim_start_matches('/'));
+    if !src.exists() {
+        return Err(Error::Runtime(format!(
+            "mount source '{}' does not exist on the host",
+            m.source
+        )));
+    }
+    let dst = PathBuf::from(&m.target);
+    if src.is_dir() {
+        std::fs::create_dir_all(&dst).map_err(rt("create mount target"))?;
+    } else {
+        if let Some(parent) = dst.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let _ = std::fs::File::create(&dst);
+    }
+    mount(
+        Some(&src),
+        &dst,
+        None::<&str>,
+        MsFlags::MS_BIND | MsFlags::MS_REC,
+        None::<&str>,
+    )
+    .map_err(rt("bind mount"))?;
+    if m.readonly {
+        mount(
+            None::<&str>,
+            &dst,
+            None::<&str>,
+            MsFlags::MS_REMOUNT | MsFlags::MS_BIND | MsFlags::MS_RDONLY,
+            None::<&str>,
+        )
+        .map_err(rt("remount mount read-only"))?;
+    }
+    Ok(())
 }
 
 /// Bind the essential device nodes from the old root into a minimal `/dev`.

@@ -138,5 +138,8 @@ cwd      = /\n\
 argv     = /bin/sh\n\
 env      = PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n\
 # net        = isolated\n\
+# readonly   = true\n\
+# timeout    = 5s               # 5s, 500ms, 2m, or a bare number of seconds\n\
+# mount      = /host/dir:/work:rw   # bind a host dir in (ro or rw); may repeat\n\
 # memory_max = 67108864\n\
 # pids_max   = 64\n";
