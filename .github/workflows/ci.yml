@@ -8,12 +8,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Build and test
+      - name: Build and test the portable core
         run: |
-          if [ -f Cargo.toml ]; then
-            rustup update stable
-            cargo build --verbose
-            cargo test --verbose
-          else
-            echo "No build configured yet; scaffolding only."
-          fi
+          rustup update stable
+          cargo build --verbose
+          cargo test --verbose
+      - name: Prove rootless isolation end to end
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y busybox-static
+          sh scripts/prove.sh
