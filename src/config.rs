@@ -146,8 +146,10 @@ fn parse_u64(v: &str, line: usize, key: &str) -> Result<u64> {
         .map_err(|_| Error::Config(format!("line {line}: {key} must be a non-negative integer")))
 }
 
-/// Parse a duration like `5s`, `500ms`, `2m`, or a bare number of seconds, to ms.
-fn parse_duration(v: &str, line: usize) -> Result<u64> {
+/// Parse a duration like `5s`, `500ms`, `2m`, or a bare number of seconds, to
+/// milliseconds. Returns None if it does not parse. Shared by the config, the
+/// `--timeout` flag, and the MCP tool so all three accept the same forms.
+pub fn parse_timeout_ms(v: &str) -> Option<u64> {
     let v = v.trim();
     let (num, mult): (&str, u64) = if let Some(n) = v.strip_suffix("ms") {
         (n, 1)
@@ -158,15 +160,15 @@ fn parse_duration(v: &str, line: usize) -> Result<u64> {
     } else {
         (v, 1000)
     };
-    num.trim()
-        .parse::<u64>()
-        .ok()
-        .and_then(|n| n.checked_mul(mult))
-        .ok_or_else(|| {
-            Error::Config(format!(
-                "line {line}: timeout must be like '5s', '500ms', '2m', or a number of seconds"
-            ))
-        })
+    num.trim().parse::<u64>().ok().and_then(|n| n.checked_mul(mult))
+}
+
+fn parse_duration(v: &str, line: usize) -> Result<u64> {
+    parse_timeout_ms(v).ok_or_else(|| {
+        Error::Config(format!(
+            "line {line}: timeout must be like '5s', '500ms', '2m', or a number of seconds"
+        ))
+    })
 }
 
 /// Parse `SOURCE:TARGET:ro|rw`, e.g. `mount = /host/data:/work:rw`. Both paths

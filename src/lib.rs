@@ -7,6 +7,7 @@
 //! The lifecycle is modeled by [`Container`].
 pub mod config;
 pub mod error;
+pub mod mcp;
 pub mod plan;
 pub mod state;
 
