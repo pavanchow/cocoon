@@ -99,6 +99,12 @@
   .shield .hd{color:var(--ok);font-weight:600}
   .plan-tbl{font-family:var(--mono);font-size:12.5px;color:var(--ink);margin-top:18px;line-height:1.95;border-top:1px solid var(--line);padding-top:14px}
   .plan-tbl b{color:var(--muted);font-weight:500;display:inline-block;min-width:96px}
+  .outcome{margin-top:18px;border-top:1px solid var(--line);padding-top:14px;opacity:.28;transition:opacity .5s}
+  .outcome.on{opacity:1}
+  .outcome .oh{font-family:var(--mono);font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:9px}
+  .outcome .call{font-family:var(--mono);font-size:12.5px;color:var(--accent);margin-bottom:9px;word-break:break-all}
+  .outcome pre{margin:0;max-width:none;background:#0f1114;color:#ececf4;font-size:12.5px;padding:14px 16px;border-radius:12px}
+  .outcome pre .k2{color:#7fd6a0}.outcome pre .n2{color:#e2a53a}.outcome pre .s2{color:#9cd1ff}.outcome pre .b2{color:#c99bff}
   pre{background:#15161c;color:#ececf4;border-radius:14px;padding:20px 22px;font-family:var(--mono);font-size:13px;line-height:1.6;overflow-x:auto;max-width:760px;margin:30px auto 0}
   pre .cm{color:#8a8d9a} pre .g{color:#7fd6a0}
   footer{padding:60px 0;border-top:1px solid var(--line);text-align:center;color:var(--muted)}
@@ -115,9 +121,9 @@
 </div></nav>
 
 <div class="hero">
-  <p class="eyebrow">Rust · rootless container runtime</p>
+  <p class="eyebrow">Rust · safe sandbox for AI agents</p>
   <h1>Watch a container<br>be born.</h1>
-  <p class="sub">Cocoon is a small rootless Linux container runtime built from scratch in Rust. Edit a bundle config and press Launch: the simulation runs the real isolation sequence, namespaces, pivot_root, dropped capabilities, seccomp, live in your browser. It needs no root, and the whole runtime is one file you can read.</p>
+  <p class="sub">Cocoon is a safe code-execution sandbox for AI agents, and a rootless Linux container runtime you can read end to end. Give it a command, get back a structured Outcome: exit code, output, wall time, peak memory. Edit a bundle config and press Launch to watch the real isolation sequence, namespaces, pivot_root, dropped capabilities, seccomp, then the measured result an agent receives. No daemon, no root, one small binary that also speaks MCP.</p>
   <div class="cta-row">
     <a class="btn primary" href="#sim">Launch the simulation</a>
     <a class="btn" href="https://github.com/pavanchow/cocoon">View on GitHub</a>
@@ -149,6 +155,11 @@
     <div class="panel"><h4>seccomp</h4><div class="shield" id="p-sec"></div></div>
   </div>
   <div class="plan-tbl" id="plantbl"></div>
+  <div class="outcome" id="outcome">
+    <div class="oh">what the agent gets back</div>
+    <div class="call" id="ocall">→ run_in_sandbox(…)</div>
+    <pre id="ojson"></pre>
+  </div>
 </div></div>
 
 <section id="proof"><div class="wrap">
@@ -355,6 +366,39 @@ function panels(t,plan){
     document.getElementById("p-sec").innerHTML=`<div class="hd">Seccomp: 2 — loaded</div>`+
       shown.map(s=>`deny ${s} → EPERM`).join("<br>");}
 }
+/* ===== agent-facing Outcome (the shape cocoon exec / run_in_sandbox returns) ===== */
+function outcomeFor(plan){
+  const cmd=plan.argv.join(" ");
+  let out="";
+  if(/hostname/.test(cmd)) out+=plan.hostname+"\n";
+  if(/pid=\$\$|echo\s+pid/.test(cmd)) out+="pid=1\n";
+  if(!out) out="(program output)\n";
+  const mem=2200+(cmd.length*7)%900;
+  return {exit_code:0,timed_out:false,oom_killed:false,wall_ms:6,peak_mem_kib:mem,stdout:out,stderr:""};
+}
+function fmtOutcome(o){
+  const row=(k,v,cls)=>`  <span class="k2">"${k}"</span>: <span class="${cls}">${v}</span>`;
+  return "{\n"+[
+    row("exit_code",o.exit_code,"n2"),
+    row("timed_out",o.timed_out,"b2"),
+    row("oom_killed",o.oom_killed,"b2"),
+    row("wall_ms",o.wall_ms,"n2"),
+    row("peak_mem_kib",o.peak_mem_kib,"n2"),
+    row("stdout",esc(JSON.stringify(o.stdout)),"s2"),
+    row("stderr",esc(JSON.stringify(o.stderr)),"s2"),
+  ].join(",\n")+"\n}";
+}
+function outcome(t,plan){
+  const el=document.getElementById("outcome");
+  if(plan && seg(t,PH[7].a,PH[7].b)>0.02){
+    el.classList.add("on");
+    document.getElementById("ocall").textContent="→ run_in_sandbox({ command: "+esc(JSON.stringify(plan.argv))+" })";
+    document.getElementById("ojson").innerHTML=fmtOutcome(outcomeFor(plan));
+  }else{
+    el.classList.remove("on");
+    document.getElementById("ojson").innerHTML=fmtOutcome(outcomeFor(plan||{argv:[""],hostname:"cocoon"}));
+  }
+}
 function planTable(plan){
   if(!plan){document.getElementById("plantbl").innerHTML="";return;}
   let t=`<b>namespaces</b> ${plan.namespaces.join(", ")}<br><b>hostname</b> ${esc(plan.hostname)}<br><b>argv</b> ${esc(plan.argv.join(" "))}`;
@@ -375,7 +419,7 @@ function frame(now){
   if(playing){const dt=(now-last)/DURATION;last=now;T=Math.min(1,T+dt);if(T>=1){playing=false;launchBtn.textContent="Replay ▸";}}
   scrub.value=Math.round(T*1000);clock.textContent=(T*DURATION/1000).toFixed(1)+"s";
   phaseTag.textContent=currentPhase(T);
-  draw(T,plan);panels(T,plan);
+  draw(T,plan);panels(T,plan);outcome(T,plan);
   requestAnimationFrame(frame);
 }
 function recompute(){
