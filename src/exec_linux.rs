@@ -18,7 +18,7 @@ use nix::sys::signal::{sigaction, SaFlags, SigAction, SigHandler, SigSet, Signal
 use nix::sys::wait::{waitpid, WaitStatus};
 use nix::unistd::{chdir, execvpe, fork, pivot_root, sethostname, ForkResult};
 use std::ffi::CString;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicI32, Ordering};
 
 fn rt<E: std::fmt::Display>(ctx: &str) -> impl Fn(E) -> Error + '_ {
@@ -71,9 +71,16 @@ pub fn run(plan: &Plan, rootfs: &Path) -> Result<i32> {
             .map_err(rt("write gid_map"))?;
     }
 
+    // Best-effort cgroup v2 limits (needs a delegated cgroup; warns and
+    // continues if none is available).
+    let cgroup = setup_cgroup(&plan.limits);
+
     // The child is pid 1 in the new pid namespace.
     match unsafe { fork() }.map_err(rt("fork"))? {
         ForkResult::Parent { child } => {
+            if let Some(cg) = &cgroup {
+                let _ = std::fs::write(cg.join("cgroup.procs"), child.as_raw().to_string());
+            }
             CHILD_PID.store(child.as_raw(), Ordering::SeqCst);
             let sa = SigAction::new(
                 SigHandler::Handler(forward_signal),
@@ -85,17 +92,21 @@ pub fn run(plan: &Plan, rootfs: &Path) -> Result<i32> {
                 let _ = sigaction(Signal::SIGINT, &sa);
             }
             // waitpid can be interrupted by a forwarded signal; retry.
-            loop {
+            let result = loop {
                 match waitpid(child, None) {
-                    Ok(WaitStatus::Exited(_, code)) => return Ok(code),
-                    Ok(WaitStatus::Signaled(_, sig, _)) => return Ok(128 + sig as i32),
+                    Ok(WaitStatus::Exited(_, code)) => break Ok(code),
+                    Ok(WaitStatus::Signaled(_, sig, _)) => break Ok(128 + sig as i32),
                     Ok(other) => {
-                        return Err(Error::Runtime(format!("unexpected wait status: {other:?}")))
+                        break Err(Error::Runtime(format!("unexpected wait status: {other:?}")))
                     }
                     Err(nix::errno::Errno::EINTR) => continue,
-                    Err(e) => return Err(rt("waitpid")(e)),
+                    Err(e) => break Err(rt("waitpid")(e)),
                 }
+            };
+            if let Some(cg) = &cgroup {
+                let _ = std::fs::remove_dir(cg);
             }
+            result
         }
         ForkResult::Child => match child_setup(plan, &rootfs) {
             Ok(never) => match never {},
@@ -171,6 +182,7 @@ fn child_setup(plan: &Plan, rootfs: &Path) -> Result<Never> {
 
     chdir(Path::new(&plan.cwd)).map_err(rt("chdir to cwd"))?;
     deprivilege();
+    apply_seccomp();
 
     // Build argv and env, defaulting PATH so plain command names resolve.
     let argv: Vec<CString> = plan
@@ -236,6 +248,102 @@ fn deprivilege() {
         // CAP_LAST_CAP is around 40; dropping past it is a harmless EINVAL.
         for cap in 0..=63 {
             libc::prctl(libc::PR_CAPBSET_DROP, cap, 0, 0, 0);
+        }
+    }
+}
+
+/// Create a child cgroup v2 under our delegated cgroup and write the requested
+/// memory/pids limits. Rootless enforcement needs the cgroup subtree to be
+/// delegated to the user; if it is not, this warns and returns None and the
+/// container runs without enforced limits (isolation is unaffected).
+fn setup_cgroup(limits: &crate::plan::Limits) -> Option<PathBuf> {
+    if !limits.any() {
+        return None;
+    }
+    let give_up = || {
+        eprintln!(
+            "cocoon: cgroup limits requested but no delegated writable cgroup v2 is available; \
+             continuing without enforcement"
+        );
+        None
+    };
+    let mine = std::fs::read_to_string("/proc/self/cgroup").ok()?;
+    let rel = mine.lines().find_map(|l| l.strip_prefix("0::"))?.trim();
+    let base = PathBuf::from("/sys/fs/cgroup").join(rel.trim_start_matches('/'));
+
+    // cgroup v2 forbids a cgroup from holding processes and enabling controllers
+    // for its children at the same time. Move ourselves into a leaf manager
+    // cgroup so `base` has no direct processes, then we can enable controllers.
+    let mgr = base.join("cocoon-mgr");
+    if std::fs::create_dir_all(&mgr).is_err() {
+        return give_up();
+    }
+    if std::fs::write(mgr.join("cgroup.procs"), std::process::id().to_string()).is_err() {
+        return give_up();
+    }
+    if std::fs::write(base.join("cgroup.subtree_control"), "+memory +pids").is_err() {
+        return give_up();
+    }
+    let cg = base.join(format!("cocoon-{}", std::process::id()));
+    if std::fs::create_dir_all(&cg).is_err() {
+        return give_up();
+    }
+    // If a limit cannot actually be written, do not pretend it is enforced.
+    if let Some(m) = limits.memory_max {
+        if std::fs::write(cg.join("memory.max"), m.to_string()).is_err() {
+            eprintln!("cocoon: could not set memory.max; continuing without that limit");
+        }
+    }
+    if let Some(p) = limits.pids_max {
+        if std::fs::write(cg.join("pids.max"), p.to_string()).is_err() {
+            eprintln!("cocoon: could not set pids.max; continuing without that limit");
+        }
+    }
+    Some(cg)
+}
+
+/// Install a small seccomp filter: allow syscalls by default, deny a curated set
+/// of dangerous ones with EPERM. Applied last, after no_new_privs, so an
+/// unprivileged process is permitted to load it.
+fn apply_seccomp() {
+    use seccompiler::{SeccompAction, SeccompFilter, TargetArch};
+    use std::collections::BTreeMap;
+
+    let deny: &[libc::c_long] = &[
+        libc::SYS_keyctl,
+        libc::SYS_add_key,
+        libc::SYS_request_key,
+        libc::SYS_ptrace,
+        libc::SYS_bpf,
+        libc::SYS_perf_event_open,
+        libc::SYS_mount,
+        libc::SYS_umount2,
+        libc::SYS_swapon,
+        libc::SYS_swapoff,
+        libc::SYS_reboot,
+        libc::SYS_kexec_load,
+        libc::SYS_init_module,
+        libc::SYS_finit_module,
+        libc::SYS_delete_module,
+    ];
+    let mut rules = BTreeMap::new();
+    for &s in deny {
+        rules.insert(s as i64, vec![]);
+    }
+    let arch = if cfg!(target_arch = "aarch64") {
+        TargetArch::aarch64
+    } else {
+        TargetArch::x86_64
+    };
+    let filter = SeccompFilter::new(
+        rules,
+        SeccompAction::Allow,
+        SeccompAction::Errno(libc::EPERM as u32),
+        arch,
+    );
+    if let Ok(f) = filter {
+        if let Ok(prog) = TryInto::<seccompiler::BpfProgram>::try_into(f) {
+            let _ = seccompiler::apply_filter(&prog);
         }
     }
 }

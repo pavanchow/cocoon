@@ -38,7 +38,7 @@ The whole runtime is [`src/exec_linux.rs`](src/exec_linux.rs):
 1. `unshare` new user, mount, pid, uts, ipc (and optionally net) namespaces.
 2. Map our outer uid/gid to 0 inside the user namespace. This is what lets the rest work without root.
 3. `fork`. The child is pid 1 in the new pid namespace.
-4. In the child: set the hostname, make the mount tree private, `pivot_root` into the bundle rootfs, mount a fresh `/proc`, drop the old root, then `exec` the process.
+4. In the child: set the hostname, make the mount tree private, `pivot_root` into the bundle rootfs, mount a fresh `/proc`, bind a minimal `/dev`, drop the old root, optionally remount the rootfs read-only, drop capabilities and set `no_new_privs`, install a seccomp filter, then `exec` the process.
 5. The parent waits and returns the exit code.
 
 ## The bundle
@@ -55,9 +55,26 @@ env      = PATH=/bin
 # pids_max   = 64
 ```
 
+## Hardening
+
+Before `exec`, the container process is deprivileged: `no_new_privs` is set, the
+ambient capability set is cleared, and the whole capability bounding set is
+dropped, so it cannot gain privileges. A small seccomp filter denies a curated
+set of dangerous syscalls (`keyctl`, `ptrace`, `mount`, `bpf`, module loading,
+and more) with `EPERM`. A minimal `/dev` (null, zero, full, random, urandom,
+tty) is bound in, and `readonly = true` remounts the rootfs read-only. All of
+this is verified inside a running container by `scripts/prove.sh` and the tests.
+
 ## Limitations, honestly
 
-Rootless and minimal on purpose. There is no image format or layering (bring your own rootfs directory), no network setup for the isolated net namespace, and cgroup limits are parsed and surfaced in `cocoon plan` but not yet enforced. The point is a readable, real isolation core, not a drop-in for runc. See [DESIGN.md](DESIGN.md).
+Rootless and minimal on purpose. There is no image format or layering (bring your
+own rootfs directory), and no network setup for the isolated net namespace. The
+seccomp filter is a small curated deny-list, not Docker's full profile. Cgroup
+`memory_max` and `pids_max` are applied only when cocoon runs inside a properly
+delegated cgroup v2; rootless delegation is environment-dependent, and where it
+is unavailable cocoon prints a warning and runs without enforcement rather than
+pretending. The point is a readable, real isolation core, not a drop-in for
+runc. See [DESIGN.md](DESIGN.md).
 
 ## License
 

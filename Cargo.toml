@@ -2,7 +2,7 @@
 name = "cocoon"
 version = "0.1.0"
 edition = "2021"
-description = "A small rootless Linux container runtime, built from scratch in Rust: it isolates a process with user, mount, pid, uts, and ipc namespaces and pivot_roots into a bundle rootfs, all without root. Readable end to end."
+description = "A small rootless Linux container runtime, built from scratch in Rust: it isolates a process with user, mount, pid, uts, and ipc namespaces, pivot_roots into a bundle rootfs, drops capabilities, sets no_new_privs, and installs a seccomp filter, all without root. Readable end to end."
 license = "MIT"
 repository = "https://github.com/pavanchow/cocoon"
 keywords = ["container", "namespaces", "rootless", "cgroups", "runtime"]
@@ -22,3 +22,4 @@ path = "src/main.rs"
 [target.'cfg(target_os = "linux")'.dependencies]
 nix = { version = "0.29", features = ["user", "mount", "sched", "process", "hostname", "fs", "signal"] }
 libc = "0.2"
+seccompiler = "0.4"
