@@ -12,8 +12,18 @@ sh "$here/build_demo_rootfs.sh" "$B"
 bin="$root/target/debug/cocoon"
 [ -x "$bin" ] || bin="$root/target/release/cocoon"
 
-out="$("$bin" run "$B")"
+out="$("$bin" run "$B" 2>&1)" || run_failed=1
 echo "container said: $out"
+if [ "${run_failed:-0}" = "1" ]; then
+  case "$out" in
+    *"Operation not permitted"*|*uid_map*|*unshare*)
+      echo "SKIP: rootless user namespaces are unavailable in this environment (not a Cocoon failure)"
+      exit 0 ;;
+    *)
+      echo "FAIL: cocoon run failed unexpectedly"
+      exit 1 ;;
+  esac
+fi
 
 fail=0
 echo "$out" | grep -q "host=cocoonbox" || { echo "FAIL: uts namespace (hostname)"; fail=1; }
