@@ -7,6 +7,7 @@
 <meta name="description" content="Cocoon by Pavan Nallamothu: a small rootless Linux container runtime built from scratch in Rust. It isolates a process with user, mount, pid, uts, and ipc namespaces, pivot_roots into a bundle rootfs, drops capabilities and applies seccomp, no root required. Edit a config and watch the container be born, live.">
 <meta name="author" content="Pavan Nallamothu (pavanchow)">
 <link rel="canonical" href="https://pavanchow.github.io/cocoon/">
+<link rel="icon" type="image/svg+xml" href="logo.svg">
 <link rel="author" href="https://github.com/pavanchow">
 <meta property="og:type" content="website">
 <meta property="og:title" content="Cocoon: a rootless Linux container runtime from scratch in Rust">
@@ -49,6 +50,12 @@
   @media(max-width:640px){nav .links a:not(.gh){display:none}}
   .hero{padding:80px 0 30px;text-align:center}
   .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent)}
+  .howto{max-width:660px;margin:0 auto 26px;border:1px solid var(--line);border-radius:14px;padding:2px 18px;background:var(--panel2)}
+  .howto>summary{cursor:pointer;font-weight:600;padding:14px 0;list-style:none}
+  .howto>summary::-webkit-details-marker{display:none}
+  .howto>summary::before{content:"\25B8";display:inline-block;margin-right:8px;color:var(--accent);transition:transform .15s}
+  .howto[open]>summary::before{transform:rotate(90deg)}
+  .howto p{margin:0 0 14px;color:var(--muted);line-height:1.6}
   h1{font-size:clamp(40px,7vw,66px);line-height:1.05;letter-spacing:-.035em;font-weight:680;margin:18px 0 0;text-wrap:balance}
   .hero p.sub{max-width:660px;margin:24px auto 0;font-size:clamp(17px,2.1vw,21px);color:var(--muted)}
   .cta-row{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-top:34px}
@@ -121,6 +128,7 @@
 </div></nav>
 
 <div class="hero">
+  <img src="logo.svg" alt="Cocoon logo" width="72" height="72">
   <p class="eyebrow">Rust · safe sandbox for AI agents</p>
   <h1>Watch a container<br>be born.</h1>
   <p class="sub">Cocoon is a safe code-execution sandbox for AI agents, and a rootless Linux container runtime you can read end to end. Give it a command, get back a structured Outcome: exit code, output, wall time, peak memory. Edit a bundle config and press Launch to watch the real isolation sequence, namespaces, pivot_root, dropped capabilities, seccomp, then the measured result an agent receives. No daemon, no root, one small binary that also speaks MCP.</p>
@@ -129,6 +137,11 @@
     <a class="btn" href="https://github.com/pavanchow/cocoon">View on GitHub</a>
   </div>
 </div>
+
+<details class="howto">
+  <summary>How to use this playground</summary>
+  <p>Edit the <code>cocoon.conf</code> bundle on the left, or pick a preset chip, then press <strong>Launch container</strong> to watch the isolation sequence play out: new namespaces, <code>pivot_root</code>, dropped capabilities, and the seccomp filter. Drag the timeline slider to step through it tick by tick, and read the measured Outcome an agent would receive at the end.</p>
+</details>
 
 <div class="stage" id="sim"><div class="card">
   <div class="chips" id="chips"></div>

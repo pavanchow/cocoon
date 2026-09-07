@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="Cocoon logo">
+  <defs>
+    <linearGradient id="co-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d9488"/>
+      <stop offset="1" stop-color="#134e4a"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="120" height="120" rx="26" fill="url(#co-bg)"/>
+  <!-- chrysalis pod: sealed, isolating what is inside -->
+  <path d="M64 20c16 0 26 16 26 40s-10 48-26 48-26-24-26-48 10-40 26-40z" fill="#f2fbf9"/>
+  <!-- wrap bands -->
+  <g stroke="#0d9488" stroke-width="4" stroke-linecap="round" opacity=".55">
+    <path d="M43 48h42"/>
+    <path d="M41 66h46"/>
+    <path d="M43 84h42"/>
+  </g>
+  <!-- the isolated process, safely contained -->
+  <circle cx="64" cy="66" r="9" fill="#5eead4"/>
+</svg>

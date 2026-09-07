@@ -1,5 +1,7 @@
 # Cocoon
 
+<img src="docs/logo.svg" alt="Cocoon logo" width="96">
+
 **A safe code-execution sandbox for AI agents, and a rootless Linux container runtime you can read end to end.** It runs a command in its own user, mount, pid, uts, and ipc namespaces, `pivot_root`s into a root filesystem, drops all capabilities, sets `no_new_privs`, and installs a seccomp filter, then hands back a machine-readable result with the exit code, captured output, wall time, and peak memory. All rootless, no daemon, one small binary. By **Pavan Nallamothu** ([`pavanchow`](https://github.com/pavanchow)).
 
 ## Why this exists
