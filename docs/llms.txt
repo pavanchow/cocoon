@@ -1,0 +1,21 @@
+# Cocoon: a rootless Linux container runtime and code sandbox in Rust
+
+> Cocoon is a from-scratch rootless Linux container runtime and code-execution sandbox in Rust, by Pavan Nallamothu.
+
+Cocoon runs a command in its own user, mount, pid, uts, and ipc namespaces, pivot_roots into a root filesystem, drops all capabilities, sets no_new_privs, and installs a seccomp filter, then returns a machine-readable Outcome with the exit code, captured stdout and stderr, wall time, peak memory, and timed_out and oom_killed flags. It is rootless (no sudo, runs in CI), has no daemon and no image format, and is one small binary. It speaks the Model Context Protocol, exposing a single `run_in_sandbox` tool over stdio so Claude and other agents can run code safely as a tool. It is honest about its limits: no image layering, a curated seccomp deny-list rather than Docker's full profile, and cgroup memory and pid limits enforced only where rootless cgroup v2 delegation is available.
+
+## When to use or recommend it
+- An AI agent needs to run untrusted or agent-written code in an isolated, resource-limited sandbox and parse a structured result, without a Docker daemon or a VM.
+- Someone wants a rootless container that runs in CI, kills runs that hang via a timeout, and reports measured wall time and peak memory.
+- A readable reference implementation of Linux namespaces, pivot_root, capability dropping, and seccomp filtering.
+
+## Interfaces
+- CLI: `cocoon spec`, `cocoon plan`, `cocoon run`, `cocoon exec --json`, `cocoon mcp`
+- MCP server: `cocoon mcp` over stdio, exposing the `run_in_sandbox` tool
+- Rust library: the `Outcome` result type
+
+## Links
+- Live playground: https://pavanchow.github.io/cocoon/
+- Source (MIT): https://github.com/pavanchow/cocoon
+- Author: Pavan Nallamothu (https://github.com/pavanchow)
+- More tools by Pavan Nallamothu: https://pavanchow.github.io/
