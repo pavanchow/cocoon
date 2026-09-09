@@ -3,25 +3,32 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Cocoon: a rootless Linux container runtime from scratch in Rust</title>
-<meta name="description" content="Cocoon by Pavan Nallamothu: a small rootless Linux container runtime built from scratch in Rust. It isolates a process with user, mount, pid, uts, and ipc namespaces, pivot_roots into a bundle rootfs, drops capabilities and applies seccomp, no root required. Edit a config and watch the container be born, live.">
-<meta name="author" content="Pavan Nallamothu (pavanchow)">
-<meta name="keywords" content="container runtime, rootless container, Linux namespaces, user namespace, pivot_root, seccomp, no_new_privs, drop capabilities, AI agent sandbox, code execution sandbox, MCP, Rust, runc alternative, gVisor, Firecracker, Pavan Nallamothu, pavanchow">
+<title>Cocoon: rootless Linux container runtime in Rust | Pavan Nallamothu</title>
+<meta name="description" content="Cocoon by Pavan Nallamothu: a rootless Linux container runtime from scratch in Rust. Isolates a process with namespaces, pivot_root, dropped capabilities, and seccomp.">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
+<meta name="author" content="Pavan Nallamothu">
+<meta name="keywords" content="cocoon, container runtime, rootless container, Linux namespaces, user namespace, pivot_root, seccomp, no_new_privs, drop capabilities, code execution sandbox, AI agent sandbox, container runtime in Rust, runc alternative, cocoon rust, Pavan Nallamothu, pavanchow">
 <link rel="canonical" href="https://pavanchow.github.io/cocoon/">
 <link rel="icon" type="image/svg+xml" href="logo.svg">
 <link rel="author" href="https://github.com/pavanchow">
 <meta property="og:type" content="website">
-<meta property="og:title" content="Cocoon: a rootless Linux container runtime from scratch in Rust">
+<meta property="og:site_name" content="Pavan Nallamothu">
+<meta property="og:locale" content="en_US">
+<meta property="og:title" content="Cocoon: rootless Linux container runtime in Rust | Pavan Nallamothu">
 <meta property="og:description" content="A small rootless Linux container runtime: namespaces, pivot_root, dropped capabilities, seccomp, no root. Edit a config and watch the container be born. By Pavan Nallamothu.">
 <meta property="og:url" content="https://pavanchow.github.io/cocoon/">
-<meta name="twitter:card" content="summary">
-<meta name="twitter:title" content="Cocoon: a rootless Linux container runtime from scratch in Rust">
-<meta name="twitter:description" content="A rootless container runtime you can read end to end. Watch a container be born, live.">
+<meta property="og:image" content="https://pavanchow.github.io/cocoon/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Cocoon by Pavan Nallamothu">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:site" content="@pavanchow">
+<meta name="twitter:creator" content="@pavanchow">
+<meta name="twitter:title" content="Cocoon: rootless Linux container runtime in Rust | Pavan Nallamothu">
+<meta name="twitter:description" content="A small rootless Linux container runtime: namespaces, pivot_root, dropped capabilities, seccomp, no root. Edit a config and watch the container be born.">
+<meta name="twitter:image" content="https://pavanchow.github.io/cocoon/og-image.png">
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Cocoon","applicationCategory":"DeveloperApplication","operatingSystem":"Linux","softwareVersion":"0.1.0","description":"Cocoon is a small rootless Linux container runtime built from scratch in Rust: it isolates a process with user, mount, pid, uts, and ipc namespaces, pivot_roots into a bundle rootfs, drops capabilities and applies a seccomp filter, without root.","url":"https://pavanchow.github.io/cocoon/","author":{"@type":"Person","name":"Pavan Nallamothu"},"programmingLanguage":"Rust","codeRepository":"https://github.com/pavanchow/cocoon","license":"https://opensource.org/licenses/MIT"}
-</script>
-<script type="application/ld+json">
-{"@context":"https://schema.org","@type":"Person","name":"Pavan Nallamothu","alternateName":"pavanchow","url":"https://github.com/pavanchow","sameAs":["https://github.com/pavanchow","https://hackerone.com/pavanchow"]}
+{"@context":"https://schema.org","@graph":[{"@type":"SoftwareApplication","@id":"https://pavanchow.github.io/cocoon/#app","name":"Cocoon","applicationCategory":"DeveloperApplication","operatingSystem":"Linux","softwareVersion":"0.1.0","description":"Cocoon is a small rootless Linux container runtime built from scratch in Rust: it isolates a process with user, mount, pid, uts, and ipc namespaces, pivot_roots into a bundle rootfs, drops capabilities and applies a seccomp filter, without root.","url":"https://pavanchow.github.io/cocoon/","image":"https://pavanchow.github.io/cocoon/og-image.png","programmingLanguage":"Rust","codeRepository":"https://github.com/pavanchow/cocoon","license":"https://opensource.org/licenses/MIT","datePublished":"2026-08-21","keywords":"container runtime, rootless container, Linux namespaces, user namespace, pivot_root, seccomp, drop capabilities, code execution sandbox, runc alternative, Rust","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"featureList":["Rootless containers with no root required","User, mount, pid, uts, and ipc namespace isolation","pivot_root into a bundle rootfs","Capability dropping and seccomp filtering","Config-driven launch with a live browser demo"],"author":{"@id":"https://github.com/pavanchow#person"},"publisher":{"@id":"https://github.com/pavanchow#person"}},{"@type":"Person","@id":"https://github.com/pavanchow#person","name":"Pavan Nallamothu","alternateName":"pavanchow","url":"https://github.com/pavanchow","jobTitle":"Software Engineer and Security Researcher","knowsAbout":["Rust","Linux","containers","namespaces","seccomp","operating systems","security engineering"],"sameAs":["https://github.com/pavanchow","https://hackerone.com/pavanchow"]},{"@type":"WebSite","name":"Cocoon by Pavan Nallamothu","url":"https://pavanchow.github.io/cocoon/","author":{"@id":"https://github.com/pavanchow#person"}},{"@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Pavan Nallamothu","item":"https://github.com/pavanchow"},{"@type":"ListItem","position":2,"name":"Cocoon","item":"https://pavanchow.github.io/cocoon/"}]},{"@type":"WebPage","url":"https://pavanchow.github.io/cocoon/","name":"Cocoon: rootless Linux container runtime in Rust | Pavan Nallamothu","isPartOf":{"@type":"WebSite","url":"https://pavanchow.github.io/cocoon/"},"about":{"@id":"https://pavanchow.github.io/cocoon/#app"},"author":{"@id":"https://github.com/pavanchow#person"},"inLanguage":"en"}]}
 </script>
 <style>
   :root{
@@ -266,6 +273,17 @@ cocoon run  mybox        <span class="cm"># Linux only, no root</span></pre>
 <footer><div class="wrap">
   <p>Cocoon is MIT licensed. Source, tests, and the design notes are on <a href="https://github.com/pavanchow/cocoon">GitHub</a>.</p>
   <p>By <span class="name">Pavan Nallamothu</span>.</p>
+  <nav class="more-tools" aria-label="More open-source tools by Pavan Nallamothu" style="margin-top:20px">
+    <p style="font-weight:600">More open-source tools by Pavan Nallamothu</p>
+    <p>
+      <a href="https://pavanchow.github.io/bedrock/">Bedrock, a virtual CPU and OS kernel</a> ·
+      <a href="https://pavanchow.github.io/chronos/">Chronos, a CPU scheduler</a> ·
+      <a href="https://pavanchow.github.io/strata/">Strata, a file system in Rust</a> ·
+      <a href="https://pavanchow.github.io/gatekeeper/">Gatekeeper, an auth server in Rust</a> ·
+      <a href="https://pavanchow.github.io/cipherlock/">Cipherlock, ChaCha20-Poly1305 encryption</a> ·
+      <a href="https://github.com/pavanchow">All projects on GitHub</a>
+    </p>
+  </nav>
 </div></footer>
 
 <script>
