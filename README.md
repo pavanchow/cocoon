@@ -6,6 +6,8 @@ Cocoon is a from-scratch rootless Linux container runtime and code-execution san
 
 **[Live demo](https://pavanchow.github.io/cocoon/)** · MIT licensed · pure Rust
 
+Built from scratch by [Pavan Nallamothu](https://pavanchow.github.io/) ([LinkedIn](https://www.linkedin.com/in/pavanchow/), [GitHub](https://github.com/pavanchow)).
+
 ## Why this exists
 
 An AI agent that writes and runs code needs to run that code somewhere it cannot do harm: isolated, resource-limited, killed if it hangs, and returning a result the agent can parse. The existing options do not fit that shape.
